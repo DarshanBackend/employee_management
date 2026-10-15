@@ -3,6 +3,9 @@ import { AuthController } from "../controller/auth.controller.js";
 import { EmployeeController } from "../controller/employee.controller.js";
 import { DepartmentController } from "../controller/department.controller.js";
 import { DesignationController } from "../controller/designation.controller.js";
+import { LeaveTypeController } from "../controller/leaveType.controller.js";
+import { HolidayController } from "../controller/holiday.controller.js";
+import { AttendanceRuleController } from "../controller/attendanceRule.controller.js";
 import {
   getProfile,
   updateProfile,
@@ -64,6 +67,30 @@ indexRouter.get("/getDesignationById/:id", UserAuth, DesignationController.getDe
 indexRouter.patch("/updateDesignation/:id", UserAuth, adminAuth, upload.single("icon"), DesignationController.updateDesignation);
 indexRouter.delete("/deleteDesignation/:id", UserAuth, adminAuth, DesignationController.deleteDesignation);
 indexRouter.get("/getDesignationLevels", DesignationController.getDesignationLevels);
+
+indexRouter.post("/addLeaveType", UserAuth, adminAuth, upload.single("icon"), LeaveTypeController.addLeaveType);
+indexRouter.get("/getAllLeaveTypes", UserAuth, LeaveTypeController.getAllLeaveTypes);
+indexRouter.get("/getLeaveTypeById/:id", UserAuth, LeaveTypeController.getLeaveTypeById);
+indexRouter.patch("/updateLeaveType/:id", UserAuth, adminAuth, upload.single("icon"), LeaveTypeController.updateLeaveType);
+indexRouter.delete("/deleteLeaveType/:id", UserAuth, adminAuth, LeaveTypeController.deleteLeaveType);
+indexRouter.post("/seedDefaultLeaveTypes", UserAuth, adminAuth, LeaveTypeController.seedDefaultLeaveTypes);
+
+indexRouter.post("/addHoliday", UserAuth, adminAuth, HolidayController.addHoliday);
+indexRouter.get("/getAllHolidays", UserAuth, HolidayController.getAllHolidays);
+indexRouter.get("/getHolidayById/:id", UserAuth, HolidayController.getHolidayById);
+indexRouter.patch("/updateHoliday/:id", UserAuth, adminAuth, HolidayController.updateHoliday);
+indexRouter.delete("/deleteHoliday/:id", UserAuth, adminAuth, HolidayController.deleteHoliday);
+indexRouter.get("/getHolidayCalendar", UserAuth, HolidayController.getCalendarHolidays);
+
+indexRouter.get("/getAttendanceRules", UserAuth, AttendanceRuleController.getAttendanceRules);
+indexRouter.patch("/updateAttendanceRules", UserAuth, adminAuth, AttendanceRuleController.updateAllAttendanceRules);
+indexRouter.patch("/updateWorkingHours", UserAuth, adminAuth, AttendanceRuleController.updateWorkingHours);
+indexRouter.patch("/updateGraceTime", UserAuth, adminAuth, AttendanceRuleController.updateGraceTime);
+indexRouter.patch("/updateBreakTime", UserAuth, adminAuth, AttendanceRuleController.updateBreakTime);
+indexRouter.patch("/updateOvertimeRules", UserAuth, adminAuth, AttendanceRuleController.updateOvertimeRules);
+indexRouter.patch("/updateAutoAttendance", UserAuth, adminAuth, AttendanceRuleController.updateAutoAttendance);
+indexRouter.patch("/updateGeofencing", UserAuth, adminAuth, AttendanceRuleController.updateGeofencing);
+indexRouter.patch("/updateIpRestriction", UserAuth, adminAuth, AttendanceRuleController.updateIpRestriction);
 
 indexRouter.post("/auth/change-password", UserAuth, AuthController.changePassword);
 

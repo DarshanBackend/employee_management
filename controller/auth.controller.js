@@ -308,6 +308,7 @@ export class AuthController {
       if (!user || !user.password) {
         return res.status(401).json({
           success: false,
+          code: "INVALID_CREDENTIALS",
           message: "Oops! Email or password incorrect try another one.",
         });
       }
@@ -323,6 +324,7 @@ export class AuthController {
       if (!isPasswordValid) {
         return res.status(401).json({
           success: false,
+          code: "INVALID_CREDENTIALS",
           message: "Oops! Email or password incorrect try another one.",
         });
       }
@@ -394,7 +396,7 @@ export class AuthController {
         isVerified: false,
         type: "forgot_password",
       };
-      await user.save();
+      await user.save({ validateModifiedOnly: true });
 
       try {
         await sendOtpEmail({
@@ -461,7 +463,7 @@ export class AuthController {
       user.otp.code = null;
       user.otp.expiresAt = null;
       user.otp.isVerified = true;
-      await user.save();
+      await user.save({ validateModifiedOnly: true });
 
       return res.status(200).json({
         success: true,
@@ -521,7 +523,7 @@ export class AuthController {
         isVerified: false,
         type: null,
       };
-      await user.save();
+      await user.save({ validateModifiedOnly: true });
 
       return res.status(200).json({
         success: true,
@@ -569,6 +571,7 @@ export class AuthController {
       if (!isPasswordValid) {
         return res.status(401).json({
           success: false,
+          code: "INVALID_OLD_PASSWORD",
           message: "Invalid old password!",
         });
       }

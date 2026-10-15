@@ -16,7 +16,7 @@ export const UserAuth = async (req, res, next) => {
       req.query.token;
 
     if (!token) {
-      return sendUnauthorizedResponse(res, "Access denied. No token provided.");
+      return sendUnauthorizedResponse(res, "Access denied. No token provided.", "NO_TOKEN");
     }
 
     try {
@@ -29,7 +29,7 @@ export const UserAuth = async (req, res, next) => {
       }
 
       if (user.isUserDeleted) {
-        return sendUnauthorizedResponse(res, "This account has been deleted.");
+        return sendUnauthorizedResponse(res, "This account has been deleted.", "ACCOUNT_DELETED");
       }
 
       const userTokenVersion = user.tokenVersion || 0;
@@ -39,7 +39,8 @@ export const UserAuth = async (req, res, next) => {
       ) {
         return sendUnauthorizedResponse(
           res,
-          "Session expired or logged out. Please log in again."
+          "Session expired or logged out. Please log in again.",
+          "SESSION_EXPIRED"
         );
       }
 
@@ -50,7 +51,8 @@ export const UserAuth = async (req, res, next) => {
       ) {
         return sendUnauthorizedResponse(
           res,
-          "Session expired. You have logged out, please log in again."
+          "Session expired. You have logged out, please log in again.",
+          "SESSION_EXPIRED"
         );
       }
 
@@ -58,7 +60,10 @@ export const UserAuth = async (req, res, next) => {
       next();
     } catch (err) {
       console.error("Token verification failed:", err.message);
-      return sendUnauthorizedResponse(res, "Access denied. Invalid or expired token.");
+      if (err.name === "TokenExpiredError") {
+        return sendUnauthorizedResponse(res, "Access denied. Token has expired.", "TOKEN_EXPIRED");
+      }
+      return sendUnauthorizedResponse(res, "Access denied. Invalid or expired token.", "INVALID_TOKEN");
     }
   } catch (error) {
     return sendErrorResponse(res, 500, error.message);
@@ -67,14 +72,14 @@ export const UserAuth = async (req, res, next) => {
 
 export const adminAuth = (req, res, next) => {
   if (!req.user || req.user.role !== "admin") {
-    return sendUnauthorizedResponse(res, "Access Denied. Admins only.");
+    return sendUnauthorizedResponse(res, "Access Denied. Admins only.", "ADMIN_ONLY");
   }
   next();
 };
 
 export const employeeAuth = (req, res, next) => {
   if (!req.user || req.user.role !== "employee") {
-    return sendUnauthorizedResponse(res, "Access Denied. Employees only.");
+    return sendUnauthorizedResponse(res, "Access Denied. Employees only.", "EMPLOYEE_ONLY");
   }
   next();
 };

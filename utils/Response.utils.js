@@ -46,17 +46,19 @@ export const sendBadRequestResponse = (res, message) => {
     });
 };
 
-export const sendUnauthorizedResponse = (res, message) => {
+export const sendUnauthorizedResponse = (res, message, code = "UNAUTHORIZED") => {
     return res.status(401).json({
         success: false,
+        code,
         message,
         result: []
     });
 };
 
-export const sendForbiddenResponse = (res, message) => {
+export const sendForbiddenResponse = (res, message, code = "FORBIDDEN") => {
     return res.status(403).json({
         success: false,
+        code,
         message,
         result: []
     });
