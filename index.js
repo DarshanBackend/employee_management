@@ -8,8 +8,10 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { connectDB } from "./DB/connectdb.js";
 import IndexRoute from "./routes/index.routes.js";
+import dns from "node:dns/promises";
 
 dotenv.config();
+dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 const app = express();
 const httpServer = createServer(app);
