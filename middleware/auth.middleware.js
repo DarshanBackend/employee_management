@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import UserModel from "../model/user.model.js";
-import { sendErrorResponse, sendUnauthorizedResponse, sendNotFoundResponse } from "../utils/Response.utils.js";
+import { sendErrorResponse, sendUnauthorizedResponse, sendNotFoundResponse, sendForbiddenResponse } from "../utils/Response.utils.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -82,6 +82,45 @@ export const employeeAuth = (req, res, next) => {
     return sendUnauthorizedResponse(res, "Access Denied. Employees only.", "EMPLOYEE_ONLY");
   }
   next();
+};
+
+export const requirePermission = (permissionName) => {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return sendUnauthorizedResponse(res, "Authentication required");
+      }
+
+      if (req.user.role === "admin") {
+        return next();
+      }
+
+      const RoleModel = (await import("../model/role.model.js")).default;
+
+      let role = null;
+      if (req.user.customRole) {
+        role = await RoleModel.findOne({ _id: req.user.customRole, isDeleted: false, isActive: true });
+      }
+      if (!role && req.user.roleTitle) {
+        role = await RoleModel.findOne({ roleTitle: req.user.roleTitle, isDeleted: false, isActive: true });
+      }
+      if (!role) {
+        role = await RoleModel.findOne({ roleTitle: "Standard Employee", isDeleted: false, isActive: true });
+      }
+
+      if (!role || !role.permissions || !role.permissions.includes(permissionName)) {
+        return sendForbiddenResponse(
+          res,
+          `Access Denied. You do not possess the required privilege: '${permissionName}'.`
+        );
+      }
+
+      req.role = role;
+      next();
+    } catch (err) {
+      return sendErrorResponse(res, 500, "Error verifying permission privileges", err);
+    }
+  };
 };
 
 export const checkUserSubscriptionAccess = async (user) => {

@@ -150,9 +150,6 @@ const formatHolidayItem = (h) => {
 };
 
 export class HolidayController {
-  /**
-   * Add a new holiday (Admin only)
-   */
   static async addHoliday(req, res) {
     try {
       const {
@@ -238,9 +235,6 @@ export class HolidayController {
     }
   }
 
-  /**
-   * Get all holidays added by admin
-   */
   static async getAllHolidays(req, res) {
     try {
       const {
@@ -330,9 +324,6 @@ export class HolidayController {
     }
   }
 
-  /**
-   * Get calendar holidays matching the UI Preview structure
-   */
   static async getCalendarHolidays(req, res) {
     try {
       const now = new Date();
@@ -387,9 +378,6 @@ export class HolidayController {
     }
   }
 
-  /**
-   * Get single holiday by ID
-   */
   static async getHolidayById(req, res) {
     try {
       const { id } = req.params;
@@ -418,9 +406,6 @@ export class HolidayController {
     }
   }
 
-  /**
-   * Update holiday (Admin only)
-   */
   static async updateHoliday(req, res) {
     try {
       const { id } = req.params;
@@ -511,9 +496,6 @@ export class HolidayController {
     }
   }
 
-  /**
-   * Delete holiday (Admin only)
-   */
   static async deleteHoliday(req, res) {
     try {
       const { id } = req.params;

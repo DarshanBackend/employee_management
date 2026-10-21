@@ -37,6 +37,7 @@
     "socket.io": "^4.8.1",
     "stripe": "^19.2.0",
     "twilio": "^5.8.2",
-    "ua-parser-js": "^1.0.38"
+    "ua-parser-js": "^1.0.38",
+    "xlsx": "^0.18.5"
   }
 }

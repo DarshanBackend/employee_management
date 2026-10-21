@@ -76,6 +76,16 @@ const UserSchema = new mongoose.Schema(
       enum: ["admin", "employee"],
       default: "employee",
     },
+    customRole: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Role",
+      default: null,
+    },
+    roleTitle: {
+      type: String,
+      default: null,
+      trim: true,
+    },
     isEmailVerified: {
       type: Boolean,
       default: true,

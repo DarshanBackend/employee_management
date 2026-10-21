@@ -28,7 +28,7 @@ const calculateTotalHours = (startTime, endTime) => {
   if (startMin === null || endMin === null) return "9h 00m";
 
   let diff = endMin - startMin;
-  if (diff < 0) diff += 24 * 60; // Cross-midnight shift handling
+  if (diff < 0) diff += 24 * 60;
 
   const h = Math.floor(diff / 60);
   const m = diff % 60;
@@ -57,9 +57,6 @@ const getOrCreateAttendanceRule = async (userId = null) => {
 };
 
 export class AttendanceRuleController {
-  /**
-   * Get all attendance rules configuration
-   */
   static async getAttendanceRules(req, res) {
     try {
       const rules = await getOrCreateAttendanceRule(req.user?._id);
@@ -74,9 +71,6 @@ export class AttendanceRuleController {
     }
   }
 
-  /**
-   * Update Working Hours settings (Screen 2)
-   */
   static async updateWorkingHours(req, res) {
     try {
       const { enableWorkingHours, startTime, endTime, workingDays, totalHours } =
@@ -100,7 +94,6 @@ export class AttendanceRuleController {
         rules.workingHours.workingDays = workingDays;
       }
 
-      // Auto-calculate totalHours if not explicitly passed
       if (totalHours !== undefined && String(totalHours).trim()) {
         rules.workingHours.totalHours = String(totalHours).trim();
       } else if (rules.workingHours.startTime && rules.workingHours.endTime) {
@@ -124,9 +117,6 @@ export class AttendanceRuleController {
     }
   }
 
-  /**
-   * Update Grace Time settings (Screen 3)
-   */
   static async updateGraceTime(req, res) {
     try {
       const {
@@ -189,9 +179,6 @@ export class AttendanceRuleController {
     }
   }
 
-  /**
-   * Update Break Time settings (Screen 4)
-   */
   static async updateBreakTime(req, res) {
     try {
       const {
@@ -252,9 +239,6 @@ export class AttendanceRuleController {
     }
   }
 
-  /**
-   * Update Overtime Rules settings (Screen 5)
-   */
   static async updateOvertimeRules(req, res) {
     try {
       const {
@@ -317,9 +301,6 @@ export class AttendanceRuleController {
     }
   }
 
-  /**
-   * Update Auto Check-In / Out (Screen 6)
-   */
   static async updateAutoAttendance(req, res) {
     try {
       const {
@@ -369,9 +350,6 @@ export class AttendanceRuleController {
     }
   }
 
-  /**
-   * Update Geofencing settings (Screen 7)
-   */
   static async updateGeofencing(req, res) {
     try {
       const {
@@ -427,9 +405,6 @@ export class AttendanceRuleController {
     }
   }
 
-  /**
-   * Update IP Restriction settings (Screen 8)
-   */
   static async updateIpRestriction(req, res) {
     try {
       const {
@@ -471,9 +446,6 @@ export class AttendanceRuleController {
     }
   }
 
-  /**
-   * Update all or any section of attendance rules at once
-   */
   static async updateAllAttendanceRules(req, res) {
     try {
       const {

@@ -6,6 +6,12 @@ import { DesignationController } from "../controller/designation.controller.js";
 import { LeaveTypeController } from "../controller/leaveType.controller.js";
 import { HolidayController } from "../controller/holiday.controller.js";
 import { AttendanceRuleController } from "../controller/attendanceRule.controller.js";
+import { PayrollController } from "../controller/payroll.controller.js";
+import { ExportReportController } from "../controller/exportReport.controller.js";
+import { ReportsAnalyticsController } from "../controller/reportsAnalytics.controller.js";
+import { RoleController } from "../controller/role.controller.js";
+import { OrganizationController } from "../controller/organization.controller.js";
+import { AuditLogController } from "../controller/auditLog.controller.js";
 import {
   getProfile,
   updateProfile,
@@ -91,6 +97,48 @@ indexRouter.patch("/updateOvertimeRules", UserAuth, adminAuth, AttendanceRuleCon
 indexRouter.patch("/updateAutoAttendance", UserAuth, adminAuth, AttendanceRuleController.updateAutoAttendance);
 indexRouter.patch("/updateGeofencing", UserAuth, adminAuth, AttendanceRuleController.updateGeofencing);
 indexRouter.patch("/updateIpRestriction", UserAuth, adminAuth, AttendanceRuleController.updateIpRestriction);
+
+indexRouter.get("/getPayrollSettings", UserAuth, PayrollController.getPayrollSettings);
+indexRouter.patch("/updatePayrollSettings", UserAuth, adminAuth, PayrollController.updatePayrollSettings);
+indexRouter.post("/calculateSalaryBreakdown", UserAuth, PayrollController.calculateSalaryBreakdown);
+
+indexRouter.get("/getExportFormOptions", UserAuth, ExportReportController.getExportFormOptions);
+indexRouter.get("/getRecentExports", UserAuth, ExportReportController.getRecentExports);
+indexRouter.post("/generateExport", UserAuth, ExportReportController.generateExport);
+indexRouter.get("/downloadRecentExport/:id", UserAuth, ExportReportController.downloadRecentExport);
+indexRouter.delete("/deleteExport/:id", UserAuth, adminAuth, ExportReportController.deleteExport);
+
+indexRouter.get("/getReportsAnalytics", UserAuth, ReportsAnalyticsController.getReportsAnalytics);
+indexRouter.post("/exportAnalyticsPdf", UserAuth, ReportsAnalyticsController.exportAnalyticsPdf);
+indexRouter.get("/exportAnalyticsPdf", UserAuth, ReportsAnalyticsController.exportAnalyticsPdf);
+
+indexRouter.get("/getAllRoles", UserAuth, RoleController.getAllRoles);
+indexRouter.get("/getRoleById/:id", UserAuth, RoleController.getRoleById);
+indexRouter.post("/addRole", UserAuth, adminAuth, RoleController.addRole);
+indexRouter.patch("/updateRole/:id", UserAuth, adminAuth, RoleController.updateRole);
+indexRouter.patch("/updateRolePermissions/:id", UserAuth, adminAuth, RoleController.updateRolePermissions);
+indexRouter.patch("/toggleRoleStatus/:id", UserAuth, adminAuth, RoleController.toggleRoleStatus);
+indexRouter.delete("/deleteRole/:id", UserAuth, adminAuth, RoleController.deleteRole);
+indexRouter.get("/getAvailablePermissions", UserAuth, RoleController.getAvailablePermissions);
+indexRouter.post("/assignRoleToUser", UserAuth, adminAuth, RoleController.assignRoleToUser);
+indexRouter.get("/getRoleAssignedUsers/:id", UserAuth, RoleController.getRoleAssignedUsers);
+indexRouter.get("/getMyPermissions", UserAuth, RoleController.getMyPermissions);
+
+indexRouter.get("/getOrganizationSettings", UserAuth, OrganizationController.getOrganizationSettings);
+indexRouter.get("/getOrganizationInfo", UserAuth, OrganizationController.getOrganizationInfo);
+indexRouter.patch("/updateOrganizationInfo", UserAuth, adminAuth, OrganizationController.updateOrganizationInfo);
+
+indexRouter.post("/addBranch", UserAuth, adminAuth, OrganizationController.addBranch);
+indexRouter.get("/getAllBranches", UserAuth, OrganizationController.getAllBranches);
+indexRouter.get("/getBranchById/:id", UserAuth, OrganizationController.getBranchById);
+indexRouter.patch("/updateBranch/:id", UserAuth, adminAuth, OrganizationController.updateBranch);
+indexRouter.delete("/deleteBranch/:id", UserAuth, adminAuth, OrganizationController.deleteBranch);
+
+indexRouter.get("/getAuditLogs", UserAuth, AuditLogController.getAuditLogs);
+indexRouter.get("/getAuditLogById/:id", UserAuth, AuditLogController.getAuditLogById);
+indexRouter.get("/getAuditLogDiff/:id", UserAuth, AuditLogController.getAuditLogDiff);
+indexRouter.post("/createAuditLog", UserAuth, adminAuth, AuditLogController.createAuditLog);
+indexRouter.get("/exportAuditLogs", UserAuth, adminAuth, AuditLogController.exportAuditLogs);
 
 indexRouter.post("/auth/change-password", UserAuth, AuthController.changePassword);
 

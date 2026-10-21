@@ -2,9 +2,11 @@ import mongoose from "mongoose";
 import UserModel from "../model/user.model.js";
 import DepartmentModel from "../model/department.model.js";
 import DesignationModel from "../model/designation.model.js";
+import RoleModel from "../model/role.model.js";
 import { uploadFile, deleteFileFromS3 } from "../middleware/imageupload.js";
 import bcrypt from "bcryptjs";
 import transporter from "../utils/Email.config.js";
+import { recordAuditLog } from "../utils/auditLogger.js";
 
 const generateEmployeeId = async () => {
   const count = await UserModel.countDocuments({ role: "employee" });
@@ -189,6 +191,29 @@ export class EmployeeController {
         validDesignationId = desigExists._id;
       }
 
+      let validRoleId = null;
+      let validRoleTitle = null;
+      const rawRole = bodyData.customRole || bodyData.roleId;
+      if (rawRole && rawRole !== "null" && rawRole !== "undefined" && String(rawRole).trim() !== "") {
+        const trimmedRole = String(rawRole).trim();
+        if (mongoose.Types.ObjectId.isValid(trimmedRole)) {
+          const roleDoc = await RoleModel.findOne({ _id: trimmedRole, isDeleted: false });
+          if (roleDoc) {
+            validRoleId = roleDoc._id;
+            validRoleTitle = roleDoc.roleTitle;
+          }
+        }
+      } else if (bodyData.roleTitle && bodyData.roleTitle.trim()) {
+        const roleDoc = await RoleModel.findOne({
+          roleTitle: { $regex: new RegExp(`^${bodyData.roleTitle.trim()}$`, "i") },
+          isDeleted: false,
+        });
+        if (roleDoc) {
+          validRoleId = roleDoc._id;
+          validRoleTitle = roleDoc.roleTitle;
+        }
+      }
+
       const rawPassword = password || "Employee@123";
       const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
@@ -202,6 +227,8 @@ export class EmployeeController {
         avatarUrl,
         phone: phoneNumber || contactInfo.mobileNumber || null,
         role: "employee",
+        customRole: validRoleId,
+        roleTitle: validRoleTitle,
         isEmailVerified: true,
         dateOfBirth: dateOfBirth || null,
         gender: gender || "",
@@ -257,6 +284,17 @@ export class EmployeeController {
         .select("-password -otp")
         .populate("department", "departmentName icon color")
         .populate("designation", "designationName level icon");
+
+      await recordAuditLog(req, {
+        action: "Onboarded New Employee",
+        category: "Employees",
+        description: `Created employee profile for ${fullName} (${empId})`,
+        targetResource: `${fullName} (${empId})`,
+        diff: {
+          before: "None",
+          after: `Employee Status: ${employeeStatus || "Active"} (${empId})`,
+        },
+      });
 
       return res.status(201).json({
         success: true,
@@ -343,6 +381,7 @@ export class EmployeeController {
           .select("-password -otp")
           .populate("department", "departmentName icon color")
           .populate("designation", "designationName level icon")
+          .populate("customRole", "roleTitle category badgeColor permissions")
           .sort({ [sortBy]: sortOrder })
           .skip(skip)
           .limit(parseInt(limit, 10)),
@@ -388,7 +427,8 @@ export class EmployeeController {
       })
         .select("-password -otp")
         .populate("department", "departmentName icon color")
-        .populate("designation", "designationName level icon");
+        .populate("designation", "designationName level icon")
+        .populate("customRole", "roleTitle category badgeColor permissions");
 
       if (!employee) {
         return res.status(404).json({
@@ -537,6 +577,37 @@ export class EmployeeController {
         }
       }
 
+      if (bodyData.customRole !== undefined || bodyData.roleId !== undefined) {
+        const rawRole = bodyData.customRole !== undefined ? bodyData.customRole : bodyData.roleId;
+        if (!rawRole || rawRole === "null" || String(rawRole).trim() === "") {
+          employee.customRole = null;
+          employee.roleTitle = null;
+        } else {
+          const trimmedRole = String(rawRole).trim();
+          if (mongoose.Types.ObjectId.isValid(trimmedRole)) {
+            const roleDoc = await RoleModel.findOne({ _id: trimmedRole, isDeleted: false });
+            if (roleDoc) {
+              employee.customRole = roleDoc._id;
+              employee.roleTitle = roleDoc.roleTitle;
+            }
+          }
+        }
+      } else if (bodyData.roleTitle !== undefined) {
+        if (!bodyData.roleTitle || String(bodyData.roleTitle).trim() === "") {
+          employee.customRole = null;
+          employee.roleTitle = null;
+        } else {
+          const roleDoc = await RoleModel.findOne({
+            roleTitle: { $regex: new RegExp(`^${String(bodyData.roleTitle).trim()}$`, "i") },
+            isDeleted: false,
+          });
+          if (roleDoc) {
+            employee.customRole = roleDoc._id;
+            employee.roleTitle = roleDoc.roleTitle;
+          }
+        }
+      }
+
       if (bodyData.firstName || bodyData.lastName) {
         employee.name = `${employee.firstName || ""} ${employee.lastName || ""}`.trim();
       }
@@ -633,9 +704,21 @@ export class EmployeeController {
         }
       }
 
+      const oldStatus = employee.employeeStatus || "Active";
       employee.isUserDeleted = true;
       employee.employeeStatus = "Terminated";
       await employee.save({ validateBeforeSave: false });
+
+      await recordAuditLog(req, {
+        action: "Employee Terminated",
+        category: "Employees",
+        description: `Terminated employee profile for ${employee.name || employee.firstName || "Employee"} (${employee.employeeId || ""})`,
+        targetResource: `${employee.name || employee.firstName || "Employee"} (${employee.employeeId || ""})`,
+        diff: {
+          before: `Employee Status: ${oldStatus}`,
+          after: "Employee Status: Terminated",
+        },
+      });
 
       return res.status(200).json({
         success: true,
@@ -669,8 +752,20 @@ export class EmployeeController {
         return res.status(404).json({ success: false, message: "Employee not found" });
       }
 
+      const oldStatus = employee.employeeStatus || "Probation";
       employee.employeeStatus = status;
       await employee.save();
+
+      await recordAuditLog(req, {
+        action: `Status Change to ${status}`,
+        category: "Employees",
+        description: `Completed probation review for ${employee.name || employee.firstName || "Employee"} (${employee.employeeId || ""})`,
+        targetResource: `${employee.name || employee.firstName || "Employee"} (${employee.employeeId || ""})`,
+        diff: {
+          before: `Employee Status: ${oldStatus}`,
+          after: `Employee Status: ${status}`,
+        },
+      });
 
       return res.status(200).json({
         success: true,
