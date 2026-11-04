@@ -66,32 +66,98 @@ const normalizeHolidayType = (typeInput) => {
   return "Public Holiday";
 };
 
-const parseDateDetails = (dateVal) => {
-  if (!dateVal) return null;
+const parseMonthParam = (monthInput) => {
+  if (monthInput === undefined || monthInput === null || monthInput === "") {
+    return null;
+  }
+
+  const str = String(monthInput).trim().toLowerCase();
+  if (str === "all" || str === "0") {
+    return null;
+  }
+
+  const num = parseInt(str, 10);
+  if (!isNaN(num) && /^\d+$/.test(str)) {
+    if (num >= 1 && num <= 12) {
+      return num;
+    }
+    return { error: "Invalid month parameter! Month number must be between 1 and 12." };
+  }
+
+  const monthMap = {
+    jan: 1, january: 1,
+    feb: 2, february: 2,
+    mar: 3, march: 3,
+    apr: 4, april: 4,
+    may: 5,
+    jun: 6, june: 6,
+    jul: 7, july: 7,
+    aug: 8, august: 8,
+    sep: 9, sept: 9, september: 9,
+    oct: 10, october: 10,
+    nov: 11, november: 11,
+    dec: 12, december: 12,
+  };
+
+  if (monthMap[str]) {
+    return monthMap[str];
+  }
+
+  return {
+    error: `Invalid month '${monthInput}'! Please provide a valid month number (1-12) or month name (e.g. 'November' or 'Nov').`,
+  };
+};
+
+const parseDateDetails = (dateVal, fieldName = "Date") => {
+  if (!dateVal) return { error: `${fieldName} is required!` };
 
   let year, month, day;
-  if (typeof dateVal === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateVal.trim())) {
-    const parts = dateVal.trim().split("-");
+  if (typeof dateVal === "string") {
+    const trimmed = dateVal.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return { error: `Invalid ${fieldName} format! Use YYYY-MM-DD format.` };
+    }
+    const parts = trimmed.split("-");
     year = parseInt(parts[0], 10);
     month = parseInt(parts[1], 10);
     day = parseInt(parts[2], 10);
   } else {
     const d = new Date(dateVal);
-    if (isNaN(d.getTime())) return null;
+    if (isNaN(d.getTime())) {
+      return { error: `Invalid ${fieldName} format! Use YYYY-MM-DD format.` };
+    }
     year = d.getUTCFullYear();
     month = d.getUTCMonth() + 1;
     day = d.getUTCDate();
   }
 
+  if (isNaN(year) || year < 1900 || year > 2100) {
+    return { error: `Invalid year in ${fieldName}! Year must be between 1900 and 2100.` };
+  }
+
+  if (isNaN(month) || month < 1 || month > 12) {
+    return { error: `Invalid month '${month}' in ${fieldName}! Month must be between 1 and 12.` };
+  }
+
+  const maxDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const monthName = MONTH_NAMES[month - 1] || `Month ${month}`;
+
+  if (isNaN(day) || day < 1 || day > maxDays) {
+    return {
+      error: `Invalid date '${dateVal}'! Day must be between 1 and ${maxDays} for ${monthName} ${year}.`,
+    };
+  }
+
   const d = new Date(Date.UTC(year, month - 1, day));
-  if (isNaN(d.getTime())) return null;
+  if (isNaN(d.getTime())) {
+    return { error: `Invalid calendar date for ${fieldName}!` };
+  }
 
   const dayOfWeek = DAYS_OF_WEEK[d.getUTCDay()];
   const padMonth = String(month).padStart(2, "0");
   const padDay = String(day).padStart(2, "0");
   const dateString = `${year}-${padMonth}-${padDay}`;
   const monthShort = MONTH_SHORT[month - 1];
-  const monthName = MONTH_NAMES[month - 1];
   const formattedDate = `${day} ${monthShort} ${year}`;
   const displayDate = `${dayOfWeek} • ${day} ${monthShort} ${year}`;
 
@@ -106,6 +172,69 @@ const parseDateDetails = (dateVal) => {
     monthName,
     day,
     dayOfWeek,
+  };
+};
+
+const getTodayDateString = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const calculateHolidayDateRange = (startDateInput, endDateInput, fallbackDateInput = null) => {
+  const rawStart = startDateInput || fallbackDateInput;
+  const rawEnd = endDateInput || rawStart;
+
+  if (!rawStart) {
+    return { error: "Holiday date or startDate is required!" };
+  }
+
+  const startDetails = parseDateDetails(rawStart, "startDate");
+  if (startDetails.error) {
+    return { error: startDetails.error };
+  }
+
+  const endDetails = parseDateDetails(rawEnd, "endDate");
+  if (endDetails.error) {
+    return { error: endDetails.error };
+  }
+
+  const startUTC = new Date(Date.UTC(startDetails.year, startDetails.month - 1, startDetails.day));
+  const endUTC = new Date(Date.UTC(endDetails.year, endDetails.month - 1, endDetails.day));
+
+  const diffTime = endUTC.getTime() - startUTC.getTime();
+  if (diffTime < 0) {
+    return { error: "End date cannot be before start date!" };
+  }
+
+  const totalDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+  let formattedDate = startDetails.formattedDate;
+  let displayDate = startDetails.displayDate;
+
+  if (totalDays > 1) {
+    formattedDate = `${startDetails.day} ${startDetails.monthShort} ${startDetails.year} - ${endDetails.day} ${endDetails.monthShort} ${endDetails.year}`;
+    displayDate = `${startDetails.day} ${startDetails.monthShort} - ${endDetails.day} ${endDetails.monthShort} ${endDetails.year} (${totalDays} Days)`;
+  }
+
+  return {
+    startDate: startDetails.date,
+    startDateString: startDetails.dateString,
+    endDate: endDetails.date,
+    endDateString: endDetails.dateString,
+    totalDays,
+    date: startDetails.date,
+    dateString: startDetails.dateString,
+    formattedDate,
+    displayDate,
+    year: startDetails.year,
+    month: startDetails.month,
+    monthShort: startDetails.monthShort,
+    monthName: startDetails.monthName,
+    day: startDetails.day,
+    dayOfWeek: startDetails.dayOfWeek,
   };
 };
 
@@ -126,9 +255,17 @@ const formatHolidayItem = (h) => {
           "Mandatory company-wide paid day off for all staff",
       };
 
+  const startDateString = h.startDateString || h.dateString || "";
+  const endDateString = h.endDateString || startDateString || "";
+
   return {
     _id: h._id,
     holidayName: h.holidayName,
+    startDate: startDateString,
+    startDateString: startDateString,
+    endDate: endDateString,
+    endDateString: endDateString,
+    totalDays: h.totalDays || 1,
     date: h.dateString,
     dateString: h.dateString,
     day: h.day,
@@ -149,11 +286,37 @@ const formatHolidayItem = (h) => {
   };
 };
 
+const findOverlappingHoliday = async (startDateString, endDateString, excludeId = null) => {
+  const query = {
+    isDeleted: false,
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+    $or: [
+      {
+        startDateString: { $exists: true, $ne: null, $ne: "", $lte: endDateString },
+        endDateString: { $exists: true, $ne: null, $ne: "", $gte: startDateString },
+      },
+      {
+        startDateString: { $gte: startDateString, $lte: endDateString },
+      },
+      {
+        endDateString: { $gte: startDateString, $lte: endDateString },
+      },
+      {
+        dateString: { $gte: startDateString, $lte: endDateString },
+      },
+    ],
+  };
+
+  return await HolidayModel.findOne(query);
+};
+
 export class HolidayController {
   static async addHoliday(req, res) {
     try {
       const {
         holidayName,
+        startDate,
+        endDate,
         date,
         type = "Public Holiday",
         classification,
@@ -166,29 +329,41 @@ export class HolidayController {
         return sendBadRequestResponse(res, "Holiday name is required!");
       }
 
-      if (!date) {
-        return sendBadRequestResponse(res, "Holiday date is required!");
+      if (!startDate && !date) {
+        return sendBadRequestResponse(res, "Holiday date or startDate is required!");
       }
 
-      const dateDetails = parseDateDetails(date);
-      if (!dateDetails) {
-        return sendBadRequestResponse(res, "Invalid holiday date format! Use YYYY-MM-DD");
+      const rangeDetails = calculateHolidayDateRange(startDate, endDate, date);
+      if (rangeDetails.error) {
+        return sendBadRequestResponse(res, rangeDetails.error);
+      }
+
+      const todayString = getTodayDateString();
+      if (rangeDetails.startDateString < todayString) {
+        return sendBadRequestResponse(
+          res,
+          `Holiday cannot be added for past dates! Start date must be today (${todayString}) or a future date.`
+        );
       }
 
       const cleanName = holidayName.trim();
       const selectedType = classification || type;
       const normalizedType = normalizeHolidayType(selectedType);
 
-      const existing = await HolidayModel.findOne({
-        dateString: dateDetails.dateString,
-        holidayName: { $regex: new RegExp(`^${cleanName}$`, "i") },
-        isDeleted: false,
-      });
+      const overlappingHoliday = await findOverlappingHoliday(
+        rangeDetails.startDateString,
+        rangeDetails.endDateString
+      );
 
-      if (existing) {
+      if (overlappingHoliday) {
+        const overlapStart = overlappingHoliday.startDateString || overlappingHoliday.dateString;
+        const overlapEnd = overlappingHoliday.endDateString || overlapStart;
+        const overlapDisplay =
+          overlapStart === overlapEnd ? overlapStart : `${overlapStart} to ${overlapEnd}`;
+
         return res.status(409).json({
           success: false,
-          message: `Holiday '${cleanName}' on date ${dateDetails.dateString} already exists.`,
+          message: `Holiday '${overlappingHoliday.holidayName}' already exists on ${overlapDisplay}. Overlapping holiday dates are not allowed!`,
         });
       }
 
@@ -207,15 +382,20 @@ export class HolidayController {
 
       const newHoliday = await HolidayModel.create({
         holidayName: cleanName,
-        date: dateDetails.date,
-        dateString: dateDetails.dateString,
-        formattedDate: dateDetails.formattedDate,
-        displayDate: dateDetails.displayDate,
-        year: dateDetails.year,
-        month: dateDetails.month,
-        monthShort: dateDetails.monthShort,
-        day: dateDetails.day,
-        dayOfWeek: dateDetails.dayOfWeek,
+        startDate: rangeDetails.startDate,
+        startDateString: rangeDetails.startDateString,
+        endDate: rangeDetails.endDate,
+        endDateString: rangeDetails.endDateString,
+        totalDays: rangeDetails.totalDays,
+        date: rangeDetails.date,
+        dateString: rangeDetails.dateString,
+        formattedDate: rangeDetails.formattedDate,
+        displayDate: rangeDetails.displayDate,
+        year: rangeDetails.year,
+        month: rangeDetails.month,
+        monthShort: rangeDetails.monthShort,
+        day: rangeDetails.day,
+        dayOfWeek: rangeDetails.dayOfWeek,
         type: normalizedType,
         classification: finalClassification,
         description: description ? description.trim() : "",
@@ -257,7 +437,12 @@ export class HolidayController {
       }
 
       if (month) {
-        filter.month = parseInt(month, 10);
+        const parsedM = parseMonthParam(month);
+        if (parsedM && !parsedM.error) {
+          filter.month = parsedM;
+        } else if (parsedM?.error) {
+          return sendBadRequestResponse(res, parsedM.error);
+        }
       }
 
       if (day) {
@@ -330,45 +515,108 @@ export class HolidayController {
       const currentYear = now.getUTCFullYear();
       const currentMonth = now.getUTCMonth() + 1;
 
-      const yearNum = req.query.year ? parseInt(req.query.year, 10) : currentYear;
-      const monthNum = req.query.month ? parseInt(req.query.month, 10) : currentMonth;
-      const dayNum = req.query.day ? parseInt(req.query.day, 10) : null;
+      const rawYear = req.query.year ?? req.body?.year;
+      const rawMonth = req.query.month ?? req.body?.month;
+      const rawDay = req.query.day ?? req.body?.day;
+      const rawType = req.query.type ?? req.body?.type;
+      const rawStatus = req.query.status ?? req.body?.status;
 
+      const yearNum = rawYear ? parseInt(rawYear, 10) : currentYear;
       if (isNaN(yearNum) || yearNum < 1900 || yearNum > 2100) {
-        return sendBadRequestResponse(res, "Invalid year parameter");
+        return sendBadRequestResponse(res, "Invalid year parameter (must be between 1900 and 2100)");
       }
 
-      if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-        return sendBadRequestResponse(res, "Invalid month parameter (must be 1-12)");
+      const parsedMonth = parseMonthParam(rawMonth);
+      if (parsedMonth && parsedMonth.error) {
+        return sendBadRequestResponse(res, parsedMonth.error);
       }
+      const monthNum = parsedMonth; // number 1-12 or null (all months)
 
+      const dayNum = rawDay ? parseInt(rawDay, 10) : null;
       if (dayNum !== null && (isNaN(dayNum) || dayNum < 1 || dayNum > 31)) {
-        return sendBadRequestResponse(res, "Invalid day parameter (must be 1-31)");
+        return sendBadRequestResponse(res, "Invalid day parameter (must be between 1 and 31)");
       }
 
       const filter = {
         isDeleted: false,
-        status: "Active",
-        year: yearNum,
-        month: monthNum,
       };
 
-      if (dayNum) {
-        filter.day = dayNum;
+      if (rawStatus && ["Active", "Inactive"].includes(rawStatus)) {
+        filter.status = rawStatus;
+      } else {
+        filter.status = "Active";
+      }
+
+      if (rawType && String(rawType).trim()) {
+        filter.type = normalizeHolidayType(rawType);
+      }
+
+      if (monthNum) {
+        const monthStartStr = `${yearNum}-${String(monthNum).padStart(2, "0")}-01`;
+        const lastDayOfMonth = new Date(Date.UTC(yearNum, monthNum, 0)).getUTCDate();
+        const monthEndStr = `${yearNum}-${String(monthNum).padStart(2, "0")}-${String(lastDayOfMonth).padStart(2, "0")}`;
+
+        if (dayNum) {
+          const targetDateStr = `${yearNum}-${String(monthNum).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+          filter.$or = [
+            {
+              startDateString: { $lte: targetDateStr },
+              endDateString: { $gte: targetDateStr },
+            },
+            { dateString: targetDateStr },
+            { year: yearNum, month: monthNum, day: dayNum },
+          ];
+        } else {
+          filter.$or = [
+            { year: yearNum, month: monthNum },
+            {
+              startDateString: { $exists: true, $ne: null, $ne: "", $lte: monthEndStr },
+              endDateString: { $exists: true, $ne: null, $ne: "", $gte: monthStartStr },
+            },
+            { dateString: { $gte: monthStartStr, $lte: monthEndStr } },
+          ];
+        }
+      } else {
+        // No specific month selected -> return all holidays for the year
+        const yearStartStr = `${yearNum}-01-01`;
+        const yearEndStr = `${yearNum}-12-31`;
+
+        if (dayNum) {
+          filter.$or = [
+            { year: yearNum, day: dayNum },
+            {
+              startDateString: { $exists: true, $ne: null, $ne: "", $lte: yearEndStr },
+              endDateString: { $exists: true, $ne: null, $ne: "", $gte: yearStartStr },
+            },
+            { dateString: { $gte: yearStartStr, $lte: yearEndStr } },
+          ];
+        } else {
+          filter.$or = [
+            { year: yearNum },
+            {
+              startDateString: { $exists: true, $ne: null, $ne: "", $lte: yearEndStr },
+              endDateString: { $exists: true, $ne: null, $ne: "", $gte: yearStartStr },
+            },
+            { dateString: { $gte: yearStartStr, $lte: yearEndStr } },
+          ];
+        }
       }
 
       const rawHolidays = await HolidayModel.find(filter)
         .select("-isDeleted -__v")
         .populate("createdBy", "name firstName lastName email role")
-        .sort({ day: 1 });
+        .sort({ startDateString: 1, date: 1, day: 1 });
 
       const holidays = rawHolidays.map(formatHolidayItem);
 
       return sendSuccessResponse(res, "Calendar holidays fetched successfully", {
         year: yearNum,
-        month: monthNum,
-        monthName: MONTH_NAMES[monthNum - 1] || "",
+        month: monthNum || "All",
+        monthName: monthNum ? MONTH_NAMES[monthNum - 1] : "All Months",
         ...(dayNum ? { day: dayNum } : {}),
+        selectedMonth: monthNum ? MONTH_NAMES[monthNum - 1] : "All Months",
+        currentMonth,
+        currentMonthName: MONTH_NAMES[currentMonth - 1],
         totalHolidays: holidays.length,
         holidays,
       });
@@ -411,6 +659,8 @@ export class HolidayController {
       const { id } = req.params;
       const {
         holidayName,
+        startDate,
+        endDate,
         date,
         type,
         classification,
@@ -436,20 +686,64 @@ export class HolidayController {
         holiday.holidayName = holidayName.trim();
       }
 
-      if (date) {
-        const dateDetails = parseDateDetails(date);
-        if (!dateDetails) {
-          return sendBadRequestResponse(res, "Invalid date format! Use YYYY-MM-DD");
+      if (startDate !== undefined || endDate !== undefined || date !== undefined) {
+        const currentStart = holiday.startDateString || holiday.dateString;
+        const currentEnd = holiday.endDateString || currentStart;
+
+        const targetStart = startDate || (date !== undefined ? date : currentStart);
+        const targetEnd =
+          endDate ||
+          (startDate !== undefined && endDate === undefined
+            ? (startDate > currentEnd ? startDate : currentEnd)
+            : date !== undefined
+              ? date
+              : currentEnd);
+
+        const rangeDetails = calculateHolidayDateRange(targetStart, targetEnd);
+        if (rangeDetails.error) {
+          return sendBadRequestResponse(res, rangeDetails.error);
         }
-        holiday.date = dateDetails.date;
-        holiday.dateString = dateDetails.dateString;
-        holiday.formattedDate = dateDetails.formattedDate;
-        holiday.displayDate = dateDetails.displayDate;
-        holiday.year = dateDetails.year;
-        holiday.month = dateDetails.month;
-        holiday.monthShort = dateDetails.monthShort;
-        holiday.day = dateDetails.day;
-        holiday.dayOfWeek = dateDetails.dayOfWeek;
+
+        const todayString = getTodayDateString();
+        if (rangeDetails.startDateString < todayString) {
+          return sendBadRequestResponse(
+            res,
+            `Holiday cannot be set to a past date! Start date must be today (${todayString}) or a future date.`
+          );
+        }
+
+        const overlappingHoliday = await findOverlappingHoliday(
+          rangeDetails.startDateString,
+          rangeDetails.endDateString,
+          holiday._id
+        );
+
+        if (overlappingHoliday) {
+          const overlapStart = overlappingHoliday.startDateString || overlappingHoliday.dateString;
+          const overlapEnd = overlappingHoliday.endDateString || overlapStart;
+          const overlapDisplay =
+            overlapStart === overlapEnd ? overlapStart : `${overlapStart} to ${overlapEnd}`;
+
+          return res.status(409).json({
+            success: false,
+            message: `Holiday date overlaps with existing holiday '${overlappingHoliday.holidayName}' (${overlapDisplay}).`,
+          });
+        }
+
+        holiday.startDate = rangeDetails.startDate;
+        holiday.startDateString = rangeDetails.startDateString;
+        holiday.endDate = rangeDetails.endDate;
+        holiday.endDateString = rangeDetails.endDateString;
+        holiday.totalDays = rangeDetails.totalDays;
+        holiday.date = rangeDetails.date;
+        holiday.dateString = rangeDetails.dateString;
+        holiday.formattedDate = rangeDetails.formattedDate;
+        holiday.displayDate = rangeDetails.displayDate;
+        holiday.year = rangeDetails.year;
+        holiday.month = rangeDetails.month;
+        holiday.monthShort = rangeDetails.monthShort;
+        holiday.day = rangeDetails.day;
+        holiday.dayOfWeek = rangeDetails.dayOfWeek;
       }
 
       const selectedType = classification || type;
@@ -476,7 +770,7 @@ export class HolidayController {
       }
 
       if (description !== undefined) {
-        holiday.description = description.trim();
+        holiday.description = description ? description.trim() : "";
       }
 
       if (status && ["Active", "Inactive"].includes(status)) {

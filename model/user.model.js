@@ -165,6 +165,56 @@ const UserSchema = new mongoose.Schema(
       trim: true,
     },
 
+    salary: {
+      type: Number,
+      default: 0,
+      min: [0, "Salary cannot be negative"],
+    },
+    salaryType: {
+      type: String,
+      default: "Monthly",
+      trim: true,
+    },
+    salaryDetails: {
+      currency: {
+        type: String,
+        default: "INR",
+        trim: true,
+      },
+      basicSalary: {
+        type: Number,
+        default: 0,
+      },
+      hra: {
+        type: Number,
+        default: 0,
+      },
+      allowances: {
+        type: Number,
+        default: 0,
+      },
+      paymentMethod: {
+        type: String,
+        enum: ["Bank Transfer", "Cash", "Cheque", "UPI", ""],
+        default: "Bank Transfer",
+      },
+      bankName: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+      accountNumber: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+      ifscCode: {
+        type: String,
+        default: "",
+        trim: true,
+      },
+    },
+
     contactInfo: {
       personalEmail: { type: String, lowercase: true, trim: true, default: "" },
       mobileNumber: { type: String, trim: true, default: "" },
@@ -179,7 +229,18 @@ const UserSchema = new mongoose.Schema(
       },
     },
 
+    shift: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Shift",
+      default: null,
+    },
+
     shiftAndSchedule: {
+      shift: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Shift",
+        default: null,
+      },
       shiftTiming: {
         type: String,
         default: "General Shift",

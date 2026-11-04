@@ -99,6 +99,8 @@ export const deleteFileFromS3 = async (fileUrl) => {
       key = "uploads/" + fileUrl.split("/uploads/")[1];
     } else if (fileUrl.startsWith("uploads/")) {
       key = fileUrl;
+    } else if (!fileUrl.startsWith("http://") && !fileUrl.startsWith("https://")) {
+      key = fileUrl;
     }
 
     if (!key) return;

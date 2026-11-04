@@ -3,7 +3,6 @@ import UserModel from "../model/user.model.js";
 import DepartmentModel from "../model/department.model.js";
 import LeaveTypeModel from "../model/leaveType.model.js";
 import PayrollSettingModel from "../model/payrollSetting.model.js";
-import AttendanceRuleModel from "../model/attendanceRule.model.js";
 import {
   sendSuccessResponse,
   sendErrorResponse,
@@ -234,35 +233,27 @@ const calculateDynamicAnalytics = async (selectedPeriodStr, selectedDeptStr) => 
     headcountByDepartment.sort((a, b) => b.count - a.count);
   }
 
-  const attendanceRule = await AttendanceRuleModel.findOne().lean();
-  const startTime = attendanceRule?.workingHours?.startTime || "09:00 AM";
-  const graceMinutes = attendanceRule?.graceTime?.graceDuration || 15;
-
   let punctualityOnTimeCount = 0;
-  let punctualityGraceCount = 0;
   let punctualityLateCount = 0;
   let punctualityLeaveCount = 0;
 
   if (totalHeadcount > 0) {
-    punctualityOnTimeCount = Math.max(1, Math.round(totalHeadcount * 0.8));
-    punctualityGraceCount = Math.max(0, Math.round(totalHeadcount * 0.12));
-    punctualityLateCount = Math.max(0, Math.round(totalHeadcount * 0.04));
+    punctualityOnTimeCount = Math.max(1, Math.round(totalHeadcount * 0.88));
+    punctualityLateCount = Math.max(0, Math.round(totalHeadcount * 0.08));
     punctualityLeaveCount = Math.max(
       0,
-      totalHeadcount -
-      (punctualityOnTimeCount + punctualityGraceCount + punctualityLateCount)
+      totalHeadcount - (punctualityOnTimeCount + punctualityLateCount)
     );
   }
 
   const punctualityTotal =
     punctualityOnTimeCount +
-    punctualityGraceCount +
     punctualityLateCount +
     punctualityLeaveCount;
 
   const attendancePunctuality = [
     {
-      category: `On-Time Arrivals (Before ${graceMinutes > 0 ? "09:15 AM" : startTime})`,
+      category: "On-Time Arrivals",
       count: punctualityOnTimeCount,
       percentage:
         punctualityTotal > 0
@@ -271,16 +262,7 @@ const calculateDynamicAnalytics = async (selectedPeriodStr, selectedDeptStr) => 
       color: "#10B981",
     },
     {
-      category: "Grace Period / Slight Delay",
-      count: punctualityGraceCount,
-      percentage:
-        punctualityTotal > 0
-          ? Number(((punctualityGraceCount / punctualityTotal) * 100).toFixed(1))
-          : 0,
-      color: "#14B8A6",
-    },
-    {
-      category: "Late Marks (> 09:30 AM)",
+      category: "Late Arrivals",
       count: punctualityLateCount,
       percentage:
         punctualityTotal > 0
@@ -301,10 +283,7 @@ const calculateDynamicAnalytics = async (selectedPeriodStr, selectedDeptStr) => 
 
   const avgAttendancePct =
     punctualityTotal > 0
-      ? (
-        ((punctualityOnTimeCount + punctualityGraceCount) / punctualityTotal) *
-        100
-      ).toFixed(1)
+      ? ((punctualityOnTimeCount / punctualityTotal) * 100).toFixed(1)
       : "0.0";
 
   const dbLeaveTypes = await LeaveTypeModel.find({ isDeleted: false })

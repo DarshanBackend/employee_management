@@ -52,6 +52,28 @@ const HolidaySchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    startDate: {
+      type: Date,
+      default: null,
+    },
+    startDateString: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    endDate: {
+      type: Date,
+      default: null,
+    },
+    endDateString: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    totalDays: {
+      type: Number,
+      default: 1,
+    },
     formattedDate: {
       type: String,
       trim: true,
@@ -150,6 +172,8 @@ const HolidaySchema = new mongoose.Schema(
 );
 
 HolidaySchema.index({ dateString: 1, isDeleted: 1 });
+HolidaySchema.index({ startDateString: 1, isDeleted: 1 });
+HolidaySchema.index({ endDateString: 1, isDeleted: 1 });
 HolidaySchema.index({ year: 1, month: 1, isDeleted: 1 });
 
 const HolidayModel = mongoose.model("Holiday", HolidaySchema);

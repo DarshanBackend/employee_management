@@ -21,19 +21,6 @@ const parseTimeToMinutes = (timeStr) => {
   return hours * 60 + minutes;
 };
 
-const calculateTotalHours = (startTime, endTime) => {
-  const startMin = parseTimeToMinutes(startTime);
-  const endMin = parseTimeToMinutes(endTime);
-
-  if (startMin === null || endMin === null) return "9h 00m";
-
-  let diff = endMin - startMin;
-  if (diff < 0) diff += 24 * 60;
-
-  const h = Math.floor(diff / 60);
-  const m = diff % 60;
-  return `${h}h ${String(m).padStart(2, "0")}m`;
-};
 
 const parseCommaSeparated = (val) => {
   if (Array.isArray(val)) return val.map((s) => String(s).trim()).filter(Boolean);
@@ -71,173 +58,7 @@ export class AttendanceRuleController {
     }
   }
 
-  static async updateWorkingHours(req, res) {
-    try {
-      const { enableWorkingHours, startTime, endTime, workingDays, totalHours } =
-        req.body;
 
-      const rules = await getOrCreateAttendanceRule(req.user?._id);
-
-      if (enableWorkingHours !== undefined) {
-        rules.workingHours.enableWorkingHours = Boolean(enableWorkingHours);
-      }
-
-      if (startTime !== undefined && String(startTime).trim()) {
-        rules.workingHours.startTime = String(startTime).trim();
-      }
-
-      if (endTime !== undefined && String(endTime).trim()) {
-        rules.workingHours.endTime = String(endTime).trim();
-      }
-
-      if (Array.isArray(workingDays)) {
-        rules.workingHours.workingDays = workingDays;
-      }
-
-      if (totalHours !== undefined && String(totalHours).trim()) {
-        rules.workingHours.totalHours = String(totalHours).trim();
-      } else if (rules.workingHours.startTime && rules.workingHours.endTime) {
-        rules.workingHours.totalHours = calculateTotalHours(
-          rules.workingHours.startTime,
-          rules.workingHours.endTime
-        );
-      }
-
-      rules.updatedBy = req.user?._id || null;
-      await rules.save();
-
-      return sendSuccessResponse(
-        res,
-        "Working hours updated successfully",
-        rules.workingHours
-      );
-    } catch (error) {
-      console.error("Update Working Hours Error:", error);
-      return sendErrorResponse(res, 500, "Failed to update working hours", error);
-    }
-  }
-
-  static async updateGraceTime(req, res) {
-    try {
-      const {
-        enableGracePeriod,
-        graceDuration,
-        maxGraceArrivalsPerMonth,
-        actionIfLimitExceeded,
-      } = req.body;
-
-      const rules = await getOrCreateAttendanceRule(req.user?._id);
-
-      if (enableGracePeriod !== undefined) {
-        rules.graceTime.enableGracePeriod = Boolean(enableGracePeriod);
-      }
-
-      if (graceDuration !== undefined) {
-        const duration = parseInt(graceDuration, 10);
-        if (isNaN(duration) || duration < 0) {
-          return sendBadRequestResponse(res, "Invalid grace duration");
-        }
-        rules.graceTime.graceDuration = duration;
-      }
-
-      if (maxGraceArrivalsPerMonth !== undefined) {
-        const arrivals = parseInt(maxGraceArrivalsPerMonth, 10);
-        if (isNaN(arrivals) || arrivals < 0) {
-          return sendBadRequestResponse(res, "Invalid max grace arrivals value");
-        }
-        rules.graceTime.maxGraceArrivalsPerMonth = arrivals;
-      }
-
-      if (actionIfLimitExceeded !== undefined && String(actionIfLimitExceeded).trim()) {
-        const allowedActions = [
-          "Mark as Half Day",
-          "Mark as Absent",
-          "Deduct Leave",
-          "Deduct Salary",
-          "Warning Only",
-        ];
-        if (!allowedActions.includes(actionIfLimitExceeded.trim())) {
-          return sendBadRequestResponse(
-            res,
-            `Action must be one of: ${allowedActions.join(", ")}`
-          );
-        }
-        rules.graceTime.actionIfLimitExceeded = actionIfLimitExceeded.trim();
-      }
-
-      rules.updatedBy = req.user?._id || null;
-      await rules.save();
-
-      return sendSuccessResponse(
-        res,
-        "Grace time rules updated successfully",
-        rules.graceTime
-      );
-    } catch (error) {
-      console.error("Update Grace Time Error:", error);
-      return sendErrorResponse(res, 500, "Failed to update grace time rules", error);
-    }
-  }
-
-  static async updateBreakTime(req, res) {
-    try {
-      const {
-        trackEmployeeBreaks,
-        lunchBreakAllowance,
-        teaBreakAllowance,
-        allowedShortBreaksPerShift,
-        deductBreaksFromTotalHours,
-      } = req.body;
-
-      const rules = await getOrCreateAttendanceRule(req.user?._id);
-
-      if (trackEmployeeBreaks !== undefined) {
-        rules.breakTime.trackEmployeeBreaks = Boolean(trackEmployeeBreaks);
-      }
-
-      if (lunchBreakAllowance !== undefined) {
-        const lunch = parseInt(lunchBreakAllowance, 10);
-        if (isNaN(lunch) || lunch < 0) {
-          return sendBadRequestResponse(res, "Invalid lunch break allowance");
-        }
-        rules.breakTime.lunchBreakAllowance = lunch;
-      }
-
-      if (teaBreakAllowance !== undefined) {
-        const tea = parseInt(teaBreakAllowance, 10);
-        if (isNaN(tea) || tea < 0) {
-          return sendBadRequestResponse(res, "Invalid tea break allowance");
-        }
-        rules.breakTime.teaBreakAllowance = tea;
-      }
-
-      if (allowedShortBreaksPerShift !== undefined) {
-        const breaks = parseInt(allowedShortBreaksPerShift, 10);
-        if (isNaN(breaks) || breaks < 0) {
-          return sendBadRequestResponse(res, "Invalid allowed short breaks value");
-        }
-        rules.breakTime.allowedShortBreaksPerShift = breaks;
-      }
-
-      if (deductBreaksFromTotalHours !== undefined) {
-        rules.breakTime.deductBreaksFromTotalHours = Boolean(
-          deductBreaksFromTotalHours
-        );
-      }
-
-      rules.updatedBy = req.user?._id || null;
-      await rules.save();
-
-      return sendSuccessResponse(
-        res,
-        "Break time rules updated successfully",
-        rules.breakTime
-      );
-    } catch (error) {
-      console.error("Update Break Time Error:", error);
-      return sendErrorResponse(res, 500, "Failed to update break time rules", error);
-    }
-  }
 
   static async updateOvertimeRules(req, res) {
     try {
@@ -449,9 +270,6 @@ export class AttendanceRuleController {
   static async updateAllAttendanceRules(req, res) {
     try {
       const {
-        workingHours,
-        graceTime,
-        breakTime,
         overtimeRules,
         autoAttendance,
         geofencing,
@@ -460,52 +278,6 @@ export class AttendanceRuleController {
 
       const rules = await getOrCreateAttendanceRule(req.user?._id);
 
-      if (workingHours && typeof workingHours === "object") {
-        if (workingHours.enableWorkingHours !== undefined) {
-          rules.workingHours.enableWorkingHours = Boolean(workingHours.enableWorkingHours);
-        }
-        if (workingHours.startTime) rules.workingHours.startTime = String(workingHours.startTime).trim();
-        if (workingHours.endTime) rules.workingHours.endTime = String(workingHours.endTime).trim();
-        if (Array.isArray(workingHours.workingDays)) rules.workingHours.workingDays = workingHours.workingDays;
-        rules.workingHours.totalHours =
-          workingHours.totalHours ||
-          calculateTotalHours(rules.workingHours.startTime, rules.workingHours.endTime);
-      }
-
-      if (graceTime && typeof graceTime === "object") {
-        if (graceTime.enableGracePeriod !== undefined) {
-          rules.graceTime.enableGracePeriod = Boolean(graceTime.enableGracePeriod);
-        }
-        if (graceTime.graceDuration !== undefined) {
-          rules.graceTime.graceDuration = parseInt(graceTime.graceDuration, 10) || 15;
-        }
-        if (graceTime.maxGraceArrivalsPerMonth !== undefined) {
-          rules.graceTime.maxGraceArrivalsPerMonth =
-            parseInt(graceTime.maxGraceArrivalsPerMonth, 10) || 3;
-        }
-        if (graceTime.actionIfLimitExceeded) {
-          rules.graceTime.actionIfLimitExceeded = String(graceTime.actionIfLimitExceeded).trim();
-        }
-      }
-
-      if (breakTime && typeof breakTime === "object") {
-        if (breakTime.trackEmployeeBreaks !== undefined) {
-          rules.breakTime.trackEmployeeBreaks = Boolean(breakTime.trackEmployeeBreaks);
-        }
-        if (breakTime.lunchBreakAllowance !== undefined) {
-          rules.breakTime.lunchBreakAllowance = parseInt(breakTime.lunchBreakAllowance, 10) || 60;
-        }
-        if (breakTime.teaBreakAllowance !== undefined) {
-          rules.breakTime.teaBreakAllowance = parseInt(breakTime.teaBreakAllowance, 10) || 15;
-        }
-        if (breakTime.allowedShortBreaksPerShift !== undefined) {
-          rules.breakTime.allowedShortBreaksPerShift =
-            parseInt(breakTime.allowedShortBreaksPerShift, 10) || 2;
-        }
-        if (breakTime.deductBreaksFromTotalHours !== undefined) {
-          rules.breakTime.deductBreaksFromTotalHours = Boolean(breakTime.deductBreaksFromTotalHours);
-        }
-      }
 
       if (overtimeRules && typeof overtimeRules === "object") {
         if (overtimeRules.enableOvertimeTracking !== undefined) {

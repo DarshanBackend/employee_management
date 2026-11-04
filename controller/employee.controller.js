@@ -3,6 +3,9 @@ import UserModel from "../model/user.model.js";
 import DepartmentModel from "../model/department.model.js";
 import DesignationModel from "../model/designation.model.js";
 import RoleModel from "../model/role.model.js";
+import ShiftModel from "../model/shift.model.js";
+import AttendanceModel from "../model/attendance.model.js";
+import LeaveModel from "../model/leave.model.js";
 import { uploadFile, deleteFileFromS3 } from "../middleware/imageupload.js";
 import bcrypt from "bcryptjs";
 import transporter from "../utils/Email.config.js";
@@ -71,6 +74,9 @@ export class EmployeeController {
       if (typeof bodyData.additionalInfo === "string") {
         try { bodyData.additionalInfo = JSON.parse(bodyData.additionalInfo); } catch (e) { }
       }
+      if (typeof bodyData.salaryDetails === "string") {
+        try { bodyData.salaryDetails = JSON.parse(bodyData.salaryDetails); } catch (e) { }
+      }
 
       const {
         employeeId: customEmployeeId,
@@ -101,6 +107,19 @@ export class EmployeeController {
 
       if (!email || !email.trim()) {
         return res.status(400).json({ success: false, message: "Email is required!" });
+      }
+
+      if (
+        bodyData.salary === undefined ||
+        bodyData.salary === null ||
+        String(bodyData.salary).trim() === "" ||
+        isNaN(Number(bodyData.salary)) ||
+        Number(bodyData.salary) <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Salary is required and must be a valid positive amount!",
+        });
       }
 
       const cleanEmail = email.toLowerCase().trim();
@@ -217,6 +236,78 @@ export class EmployeeController {
       const rawPassword = password || "Employee@123";
       const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
+      // Resolve Shift from ShiftModel (by ID from shift, shiftId, shiftAndSchedule, or shiftTiming name)
+      let selectedShift = null;
+      const requestedShiftId =
+        bodyData.shift ||
+        bodyData.shiftId ||
+        bodyData.selectedShift ||
+        (typeof bodyData.shiftAndSchedule === "string" && mongoose.Types.ObjectId.isValid(bodyData.shiftAndSchedule.trim())
+          ? bodyData.shiftAndSchedule.trim()
+          : null) ||
+        (typeof shiftAndSchedule === "object"
+          ? shiftAndSchedule?.shift || shiftAndSchedule?.shiftId || shiftAndSchedule?._id
+          : null);
+
+      if (requestedShiftId && mongoose.Types.ObjectId.isValid(String(requestedShiftId).trim())) {
+        selectedShift = await ShiftModel.findById(String(requestedShiftId).trim());
+      }
+
+      const shiftNameQuery =
+        (typeof shiftAndSchedule === "object" ? shiftAndSchedule?.shiftTiming : null) ||
+        bodyData.shiftTiming;
+
+      if (!selectedShift && shiftNameQuery && typeof shiftNameQuery === "string") {
+        selectedShift = await ShiftModel.findOne({
+          shiftName: { $regex: new RegExp(`^${shiftNameQuery.trim()}$`, "i") },
+        });
+      }
+
+      if (!selectedShift) {
+        selectedShift =
+          (await ShiftModel.findOne({ isDefault: true })) ||
+          (await ShiftModel.findOne().sort({ createdAt: 1 }));
+      }
+
+      // Resolve Salary and Optional Bank Details
+      const sDetails =
+        typeof bodyData.salaryDetails === "object" && bodyData.salaryDetails !== null
+          ? bodyData.salaryDetails
+          : {};
+
+      const parsedSalary = Number(bodyData.salary);
+      const parsedSalaryType = "Monthly";
+
+      const basicSalary =
+        sDetails.basicSalary !== undefined && sDetails.basicSalary !== ""
+          ? Number(sDetails.basicSalary)
+          : bodyData.basicSalary !== undefined && bodyData.basicSalary !== ""
+            ? Number(bodyData.basicSalary)
+            : Math.round(parsedSalary * 0.4);
+
+      const hra =
+        sDetails.hra !== undefined && sDetails.hra !== ""
+          ? Number(sDetails.hra)
+          : bodyData.hra !== undefined && bodyData.hra !== ""
+            ? Number(bodyData.hra)
+            : Math.round(basicSalary * 0.4);
+
+      const allowances =
+        sDetails.allowances !== undefined && sDetails.allowances !== ""
+          ? Number(sDetails.allowances)
+          : bodyData.allowances !== undefined && bodyData.allowances !== ""
+            ? Number(bodyData.allowances)
+            : parsedSalary > (basicSalary + hra)
+              ? parsedSalary - (basicSalary + hra)
+              : 0;
+
+      // Optional Bank Details: paymentMethod, bankName, accountNumber, ifscCode
+      const salaryCurrency = sDetails.currency || bodyData.currency || "INR";
+      const salaryPaymentMethod = sDetails.paymentMethod || bodyData.paymentMethod || "Bank Transfer";
+      const bankName = sDetails.bankName || bodyData.bankName || "";
+      const accountNumber = sDetails.accountNumber || bodyData.accountNumber || "";
+      const ifscCode = sDetails.ifscCode || bodyData.ifscCode || "";
+
       const employee = await UserModel.create({
         employeeId: empId,
         firstName: firstName || "",
@@ -243,6 +334,18 @@ export class EmployeeController {
         probationPeriod: probationPeriod || "",
         reportingManager: reportingManager || "",
         workLocation: workLocation || "",
+        salary: parsedSalary,
+        salaryType: parsedSalaryType,
+        salaryDetails: {
+          currency: salaryCurrency,
+          basicSalary,
+          hra,
+          allowances,
+          paymentMethod: salaryPaymentMethod,
+          bankName,
+          accountNumber,
+          ifscCode,
+        },
         contactInfo: {
           personalEmail: contactInfo.personalEmail || bodyData.personalEmail || "",
           mobileNumber: phoneNumber || contactInfo.mobileNumber || bodyData.mobileNumber || "",
@@ -256,9 +359,16 @@ export class EmployeeController {
             zipCode: contactInfo.address?.zipCode || bodyData.zipCode || bodyData.postalCode || "",
           },
         },
+        shift: selectedShift ? selectedShift._id : null,
         shiftAndSchedule: {
-          shiftTiming: shiftAndSchedule.shiftTiming || bodyData.shiftTiming || "General Shift",
-          weeklyOff: shiftAndSchedule.weeklyOff || bodyData.weeklyOff || "Sat - Sun",
+          shift: selectedShift ? selectedShift._id : null,
+          shiftTiming: selectedShift
+            ? selectedShift.shiftName
+            : ((typeof shiftAndSchedule === "object" ? shiftAndSchedule?.shiftTiming : null) || bodyData.shiftTiming || "General Shift"),
+          weeklyOff:
+            (typeof shiftAndSchedule === "object" ? shiftAndSchedule?.weeklyOff : null) ||
+            bodyData.weeklyOff ||
+            "Sat - Sun",
         },
         emergencyContact: {
           contactName: emergencyContact.contactName || bodyData.emergencyContactName || bodyData.contactName || "",
@@ -283,7 +393,9 @@ export class EmployeeController {
       const populatedEmployee = await UserModel.findById(employee._id)
         .select("-password -otp")
         .populate("department", "departmentName icon color")
-        .populate("designation", "designationName level icon");
+        .populate("designation", "designationName level icon")
+        .populate("shift", "shiftName startTime endTime durationHours workHoursDisplay breakTime teaBreaks color")
+        .populate("customRole", "roleTitle category badgeColor permissions");
 
       await recordAuditLog(req, {
         action: "Onboarded New Employee",
@@ -292,14 +404,18 @@ export class EmployeeController {
         targetResource: `${fullName} (${empId})`,
         diff: {
           before: "None",
-          after: `Employee Status: ${employeeStatus || "Active"} (${empId})`,
+          after: `Employee Status: ${employeeStatus || "Active"} (${empId})${parsedSalary > 0 ? `, Salary: ${parsedSalary} ${salaryCurrency}` : ""}`,
         },
       });
+
+      const resultObj = populatedEmployee.toObject();
+      resultObj.weeklyOff = employee.shiftAndSchedule?.weeklyOff || "Sat - Sun";
+      delete resultObj.shiftAndSchedule;
 
       return res.status(201).json({
         success: true,
         message: "Employee profile created successfully!",
-        result: populatedEmployee,
+        result: resultObj,
       });
     } catch (error) {
       console.error("Add Employee Error:", error);
@@ -315,33 +431,111 @@ export class EmployeeController {
     try {
       const {
         search,
+        status,
+        tab,
+        employeeStatus,
         department,
         designation,
-        employeeStatus,
+        shift,
         workLocation,
         page = 1,
         limit = 20,
-        sortBy = "createdAt",
-        order = "desc",
+        sortBy = "name_asc",
+        order,
       } = req.query;
 
-      const filter = {
+      const baseFilter = {
         role: "employee",
         isUserDeleted: { $ne: true },
       };
 
-      if (search) {
+      const todayStr = new Date().toISOString().split("T")[0];
+
+      const todayApprovedLeaves = await LeaveModel.find({
+        status: "Approved",
+        fromDate: { $lte: todayStr },
+        toDate: { $gte: todayStr },
+      }).select("employee");
+      const onLeaveEmpIdStrings = todayApprovedLeaves.map((l) => String(l.employee));
+
+      const [totalCount, activeCount, onLeaveExplicitCount, inactiveCount] = await Promise.all([
+        UserModel.countDocuments(baseFilter),
+        UserModel.countDocuments({
+          ...baseFilter,
+          employeeStatus: { $in: ["Active", "Probation"] },
+        }),
+        UserModel.countDocuments({
+          ...baseFilter,
+          $or: [
+            { employeeStatus: "On Leave" },
+            { _id: { $in: onLeaveEmpIdStrings } },
+          ],
+        }),
+        UserModel.countDocuments({
+          ...baseFilter,
+          employeeStatus: { $in: ["Inactive", "Terminated"] },
+        }),
+      ]);
+
+      const summary = {
+        totalEmployees: totalCount,
+        activeEmployees: activeCount,
+        onLeaveEmployees: onLeaveExplicitCount,
+        inactiveEmployees: inactiveCount,
+      };
+
+      const tabs = [
+        { label: "All", key: "all", count: totalCount },
+        { label: "Active", key: "active", count: activeCount },
+        { label: "On Leave", key: "on_leave", count: onLeaveExplicitCount },
+        { label: "Inactive", key: "inactive", count: inactiveCount },
+      ];
+
+      const filter = { ...baseFilter };
+
+      const selectedStatus = String(status || tab || employeeStatus || "").trim().toLowerCase();
+      if (selectedStatus && selectedStatus !== "all") {
+        if (selectedStatus === "active") {
+          filter.employeeStatus = { $in: ["Active", "Probation"] };
+        } else if (selectedStatus === "on_leave" || selectedStatus === "on leave" || selectedStatus === "leave") {
+          filter.$or = [
+            { employeeStatus: "On Leave" },
+            { _id: { $in: onLeaveEmpIdStrings } },
+          ];
+        } else if (selectedStatus === "inactive" || selectedStatus === "terminated") {
+          filter.employeeStatus = { $in: ["Inactive", "Terminated"] };
+        } else {
+          filter.employeeStatus = new RegExp(`^${selectedStatus}$`, "i");
+        }
+      }
+
+      if (search && search.trim()) {
         const regex = new RegExp(search.trim(), "i");
-        filter.$or = [
+        const [matchingDepts, matchingDesigs] = await Promise.all([
+          DepartmentModel.find({ departmentName: regex, isDeleted: false }).select("_id"),
+          DesignationModel.find({ designationName: regex, isDeleted: false }).select("_id"),
+        ]);
+        const deptIds = matchingDepts.map((d) => d._id);
+        const desigIds = matchingDesigs.map((d) => d._id);
+
+        const searchConditions = [
           { name: regex },
           { firstName: regex },
           { lastName: regex },
           { email: regex },
           { employeeId: regex },
           { phone: regex },
-          { department: regex },
-          { designation: regex },
+          { roleTitle: regex },
+          { department: { $in: deptIds } },
+          { designation: { $in: desigIds } },
         ];
+
+        if (filter.$or) {
+          filter.$and = [{ $or: filter.$or }, { $or: searchConditions }];
+          delete filter.$or;
+        } else {
+          filter.$or = searchConditions;
+        }
       }
 
       if (department && department.trim()) {
@@ -370,33 +564,218 @@ export class EmployeeController {
         }
       }
 
-      if (employeeStatus) filter.employeeStatus = employeeStatus;
-      if (workLocation) filter.workLocation = new RegExp(`^${workLocation.trim()}$`, "i");
+      if (shift && shift.trim()) {
+        const trimmedShift = shift.trim();
+        if (mongoose.Types.ObjectId.isValid(trimmedShift)) {
+          const shiftCondition = {
+            $or: [{ shift: trimmedShift }, { "shiftAndSchedule.shift": trimmedShift }],
+          };
+          if (filter.$or) {
+            filter.$and = [{ $or: filter.$or }, shiftCondition];
+            delete filter.$or;
+          } else {
+            filter.$or = shiftCondition.$or;
+          }
+        } else {
+          const matchingShifts = await ShiftModel.find({
+            shiftName: new RegExp(trimmedShift, "i"),
+          }).select("_id shiftName");
+          const shiftIds = matchingShifts.map((s) => s._id);
+          const shiftNames = matchingShifts.map((s) => s.shiftName);
+          const shiftConditions = [
+            { shift: { $in: shiftIds } },
+            { "shiftAndSchedule.shift": { $in: shiftIds } },
+            { "shiftAndSchedule.shiftTiming": { $in: shiftNames } },
+          ];
+          if (filter.$or) {
+            filter.$and = [{ $or: filter.$or }, { $or: shiftConditions }];
+            delete filter.$or;
+          } else {
+            filter.$or = shiftConditions;
+          }
+        }
+      }
 
-      const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-      const sortOrder = order === "asc" ? 1 : -1;
+      if (workLocation) {
+        filter.workLocation = new RegExp(`^${workLocation.trim()}$`, "i");
+      }
 
-      const [employees, total] = await Promise.all([
-        UserModel.find(filter)
-          .select("-password -otp")
-          .populate("department", "departmentName icon color")
-          .populate("designation", "designationName level icon")
-          .populate("customRole", "roleTitle category badgeColor permissions")
-          .sort({ [sortBy]: sortOrder })
-          .skip(skip)
-          .limit(parseInt(limit, 10)),
-        UserModel.countDocuments(filter),
+      const sortOptions = [
+        { key: "name_asc", label: "Name (A to Z)", icon: "sort-alpha-down" },
+        { key: "name_desc", label: "Name (Z to A)", icon: "sort-alpha-up" },
+        { key: "employee_id", label: "Employee ID", icon: "id-badge" },
+        { key: "department", label: "Department", icon: "building" },
+        { key: "role", label: "Role", icon: "briefcase" },
+        { key: "highest_salary", label: "Highest Salary", icon: "arrow-up" },
+        { key: "lowest_salary", label: "Lowest Salary", icon: "arrow-down" },
+        { key: "highest_attendance", label: "Highest Attendance", icon: "trending-up" },
+      ];
+
+      const rawSort = String(sortBy || "").trim().toLowerCase();
+      let normalizedSort = "name_asc";
+
+      if (
+        rawSort === "name_asc" ||
+        rawSort === "name_a_z" ||
+        rawSort === "name-a-z" ||
+        rawSort === "a-z" ||
+        rawSort === "a_z" ||
+        rawSort === "name (a to z)" ||
+        (rawSort === "name" && (order === "asc" || !order))
+      ) {
+        normalizedSort = "name_asc";
+      } else if (
+        rawSort === "name_desc" ||
+        rawSort === "name_z_a" ||
+        rawSort === "name-z-a" ||
+        rawSort === "z-a" ||
+        rawSort === "z_a" ||
+        rawSort === "name (z to a)" ||
+        (rawSort === "name" && order === "desc")
+      ) {
+        normalizedSort = "name_desc";
+      } else if (
+        rawSort === "employee_id" ||
+        rawSort === "employeeid" ||
+        rawSort === "employee-id" ||
+        rawSort === "employee id" ||
+        rawSort === "id"
+      ) {
+        normalizedSort = "employee_id";
+      } else if (rawSort === "department") {
+        normalizedSort = "department";
+      } else if (rawSort === "role" || rawSort === "designation") {
+        normalizedSort = "role";
+      } else if (
+        rawSort === "highest_salary" ||
+        rawSort === "highest-salary" ||
+        rawSort === "highest_sal" ||
+        rawSort === "salary_high" ||
+        rawSort === "highest salary" ||
+        (rawSort === "salary" && order === "desc")
+      ) {
+        normalizedSort = "highest_salary";
+      } else if (
+        rawSort === "lowest_salary" ||
+        rawSort === "lowest-salary" ||
+        rawSort === "lowest_sal" ||
+        rawSort === "salary_low" ||
+        rawSort === "lowest salary" ||
+        (rawSort === "salary" && order === "asc")
+      ) {
+        normalizedSort = "lowest_salary";
+      } else if (
+        rawSort === "highest_attendance" ||
+        rawSort === "highest-attendance" ||
+        rawSort === "attendance" ||
+        rawSort === "highest attendance"
+      ) {
+        normalizedSort = "highest_attendance";
+      } else if (rawSort === "createdat" || rawSort === "created_at") {
+        normalizedSort = order === "asc" ? "name_asc" : "name_desc";
+      }
+
+      const matchedEmployees = await UserModel.find(filter)
+        .select("-password -otp")
+        .populate("department", "departmentName icon color")
+        .populate("designation", "designationName designationTitle level icon")
+        .populate("shift", "shiftName startTime endTime durationHours workHoursDisplay breakTime teaBreaks color")
+        .populate("customRole", "roleTitle category badgeColor permissions");
+
+      const attendanceAgg = await AttendanceModel.aggregate([
+        {
+          $match: {
+            status: { $in: ["Present", "Late", "Regularized", "Half Day"] },
+          },
+        },
+        {
+          $group: {
+            _id: "$employee",
+            presentDays: { $sum: 1 },
+          },
+        },
       ]);
+      const attendanceMap = new Map();
+      attendanceAgg.forEach((a) => attendanceMap.set(String(a._id), a.presentDays));
+
+      let formattedEmployees = matchedEmployees.map((emp) => {
+        const obj = emp.toObject();
+        obj.weeklyOff = emp.shiftAndSchedule?.weeklyOff || "Sat - Sun";
+        obj.presentDays = attendanceMap.get(String(emp._id)) || 0;
+        obj.roleTitle =
+          emp.designation?.designationName ||
+          emp.designation?.designationTitle ||
+          emp.roleTitle ||
+          "Team Member";
+        obj.departmentName = emp.department?.departmentName || "General";
+        delete obj.shiftAndSchedule;
+        return obj;
+      });
+
+      switch (normalizedSort) {
+        case "name_asc":
+          formattedEmployees.sort((a, b) =>
+            (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })
+          );
+          break;
+        case "name_desc":
+          formattedEmployees.sort((a, b) =>
+            (b.name || "").localeCompare(a.name || "", undefined, { sensitivity: "base" })
+          );
+          break;
+        case "employee_id":
+          formattedEmployees.sort((a, b) =>
+            (a.employeeId || "").localeCompare(b.employeeId || "", undefined, { numeric: true })
+          );
+          break;
+        case "department":
+          formattedEmployees.sort((a, b) =>
+            (a.departmentName || "").localeCompare(b.departmentName || "")
+          );
+          break;
+        case "role":
+          formattedEmployees.sort((a, b) =>
+            (a.roleTitle || "").localeCompare(b.roleTitle || "")
+          );
+          break;
+        case "highest_salary":
+          formattedEmployees.sort(
+            (a, b) => Number(b.salary || 0) - Number(a.salary || 0)
+          );
+          break;
+        case "lowest_salary":
+          formattedEmployees.sort(
+            (a, b) => Number(a.salary || 0) - Number(b.salary || 0)
+          );
+          break;
+        case "highest_attendance":
+          formattedEmployees.sort((a, b) => b.presentDays - a.presentDays);
+          break;
+        default:
+          formattedEmployees.sort((a, b) =>
+            (a.name || "").localeCompare(b.name || "")
+          );
+      }
+
+      const pageNum = Math.max(1, parseInt(page, 10));
+      const limitNum = Math.max(1, parseInt(limit, 10));
+      const total = formattedEmployees.length;
+      const skip = (pageNum - 1) * limitNum;
+      const paginatedEmployees = formattedEmployees.slice(skip, skip + limitNum);
 
       return res.status(200).json({
         success: true,
         message: "Employees fetched successfully",
         result: {
+          summary,
+          tabs,
+          sortOptions,
+          activeSort: normalizedSort,
           total,
-          page: parseInt(page, 10),
-          limit: parseInt(limit, 10),
-          totalPages: Math.ceil(total / parseInt(limit, 10)),
-          employees,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum) || 1,
+          employees: paginatedEmployees,
         },
       });
     } catch (error) {
@@ -428,6 +807,7 @@ export class EmployeeController {
         .select("-password -otp")
         .populate("department", "departmentName icon color")
         .populate("designation", "designationName level icon")
+        .populate("shift", "shiftName startTime endTime durationHours workHoursDisplay breakTime teaBreaks color")
         .populate("customRole", "roleTitle category badgeColor permissions");
 
       if (!employee) {
@@ -437,10 +817,14 @@ export class EmployeeController {
         });
       }
 
+      const obj = employee.toObject();
+      obj.weeklyOff = employee.shiftAndSchedule?.weeklyOff || "Sat - Sun";
+      delete obj.shiftAndSchedule;
+
       return res.status(200).json({
         success: true,
         message: "Employee details fetched successfully",
-        result: employee,
+        result: obj,
       });
     } catch (error) {
       console.error("Get Employee Error:", error.message);
@@ -471,6 +855,9 @@ export class EmployeeController {
       }
       if (typeof bodyData.additionalInfo === "string") {
         try { bodyData.additionalInfo = JSON.parse(bodyData.additionalInfo); } catch (e) { }
+      }
+      if (typeof bodyData.salaryDetails === "string") {
+        try { bodyData.salaryDetails = JSON.parse(bodyData.salaryDetails); } catch (e) { }
       }
 
       const employee = await UserModel.findOne({ _id: id, role: "employee" });
@@ -615,35 +1002,308 @@ export class EmployeeController {
         employee.phone = bodyData.phoneNumber;
       }
 
-      if (bodyData.contactInfo) {
-        employee.contactInfo = {
-          ...employee.contactInfo?.toObject(),
-          ...bodyData.contactInfo,
-          address: {
-            ...employee.contactInfo?.address?.toObject(),
-            ...(bodyData.contactInfo.address || {}),
-          },
-        };
-      }
+      // Update contactInfo (supporting both nested contactInfo object and flat fields like personalEmail, mobileNumber, addressLine1, city, etc.)
+      const contactObj = typeof bodyData.contactInfo === "object" ? bodyData.contactInfo : {};
+      const currentContact = employee.contactInfo?.toObject() || {};
+      const currentAddress = currentContact.address || {};
 
-      if (bodyData.shiftAndSchedule) {
+      const personalEmail =
+        bodyData.personalEmail !== undefined ? bodyData.personalEmail : contactObj.personalEmail;
+      const mobileNumber =
+        bodyData.mobileNumber !== undefined
+          ? bodyData.mobileNumber
+          : bodyData.phoneNumber !== undefined
+            ? bodyData.phoneNumber
+            : contactObj.mobileNumber;
+      const alternatePhone =
+        bodyData.alternatePhone !== undefined ? bodyData.alternatePhone : contactObj.alternatePhone;
+
+      const addressLine1 =
+        bodyData.addressLine1 !== undefined
+          ? bodyData.addressLine1
+          : bodyData.address !== undefined
+            ? bodyData.address
+            : contactObj.address?.addressLine1;
+      const addressLine2 =
+        bodyData.addressLine2 !== undefined ? bodyData.addressLine2 : contactObj.address?.addressLine2;
+      const city = bodyData.city !== undefined ? bodyData.city : contactObj.address?.city;
+      const state = bodyData.state !== undefined ? bodyData.state : contactObj.address?.state;
+      const country =
+        bodyData.country !== undefined ? bodyData.country : (contactObj.address?.country || currentAddress.country || "India");
+      const zipCode =
+        bodyData.zipCode !== undefined
+          ? bodyData.zipCode
+          : bodyData.postalCode !== undefined
+            ? bodyData.postalCode
+            : contactObj.address?.zipCode;
+
+      employee.contactInfo = {
+        personalEmail: personalEmail !== undefined ? String(personalEmail).trim() : currentContact.personalEmail || "",
+        mobileNumber: mobileNumber !== undefined ? String(mobileNumber).trim() : currentContact.mobileNumber || "",
+        alternatePhone: alternatePhone !== undefined ? String(alternatePhone).trim() : currentContact.alternatePhone || "",
+        address: {
+          addressLine1: addressLine1 !== undefined ? String(addressLine1).trim() : currentAddress.addressLine1 || "",
+          addressLine2: addressLine2 !== undefined ? String(addressLine2).trim() : currentAddress.addressLine2 || "",
+          city: city !== undefined ? String(city).trim() : currentAddress.city || "",
+          state: state !== undefined ? String(state).trim() : currentAddress.state || "",
+          country: country !== undefined ? String(country).trim() : currentAddress.country || "India",
+          zipCode: zipCode !== undefined ? String(zipCode).trim() : currentAddress.zipCode || "",
+        },
+      };
+
+      // Handle shift update (supporting shift, shiftId, or shiftAndSchedule as ID string or object)
+      const targetShiftId =
+        bodyData.shift ||
+        bodyData.shiftId ||
+        bodyData.selectedShift ||
+        (typeof bodyData.shiftAndSchedule === "string" && mongoose.Types.ObjectId.isValid(bodyData.shiftAndSchedule.trim())
+          ? bodyData.shiftAndSchedule.trim()
+          : null) ||
+        (typeof bodyData.shiftAndSchedule === "object"
+          ? bodyData.shiftAndSchedule?.shift || bodyData.shiftAndSchedule?.shiftId || bodyData.shiftAndSchedule?._id
+          : null);
+
+      const targetWeeklyOff =
+        bodyData.weeklyOff ||
+        (typeof bodyData.shiftAndSchedule === "object" ? bodyData.shiftAndSchedule?.weeklyOff : null);
+
+      const targetShiftName =
+        bodyData.shiftTiming ||
+        (typeof bodyData.shiftAndSchedule === "object" ? bodyData.shiftAndSchedule?.shiftTiming : null);
+
+      if (targetShiftId && String(targetShiftId).trim() !== "" && String(targetShiftId) !== "null") {
+        const trimmedShiftId = String(targetShiftId).trim();
+        if (!mongoose.Types.ObjectId.isValid(trimmedShiftId)) {
+          return res.status(400).json({ success: false, message: "Invalid Shift ID" });
+        }
+        const foundShift = await ShiftModel.findById(trimmedShiftId);
+        if (!foundShift) {
+          return res.status(404).json({ success: false, message: "Selected shift not found" });
+        }
+        employee.shift = foundShift._id;
         employee.shiftAndSchedule = {
           ...employee.shiftAndSchedule?.toObject(),
-          ...bodyData.shiftAndSchedule,
+          shift: foundShift._id,
+          shiftTiming: foundShift.shiftName,
+          weeklyOff: targetWeeklyOff || employee.shiftAndSchedule?.weeklyOff || "Sat - Sun",
+        };
+      } else if (targetShiftName && typeof targetShiftName === "string" && targetShiftName.trim() !== "") {
+        const foundShift = await ShiftModel.findOne({
+          shiftName: { $regex: new RegExp(`^${targetShiftName.trim()}$`, "i") },
+        });
+        if (foundShift) {
+          employee.shift = foundShift._id;
+          employee.shiftAndSchedule = {
+            ...employee.shiftAndSchedule?.toObject(),
+            shift: foundShift._id,
+            shiftTiming: foundShift.shiftName,
+            weeklyOff: targetWeeklyOff || employee.shiftAndSchedule?.weeklyOff || "Sat - Sun",
+          };
+        }
+      } else if (bodyData.shift === null || bodyData.shift === "null" || bodyData.shiftId === null || bodyData.shiftId === "null") {
+        employee.shift = null;
+        employee.shiftAndSchedule = {
+          shift: null,
+          shiftTiming: "General Shift",
+          weeklyOff: targetWeeklyOff || employee.shiftAndSchedule?.weeklyOff || "Sat - Sun",
+        };
+      } else if (targetWeeklyOff) {
+        employee.shiftAndSchedule = {
+          ...employee.shiftAndSchedule?.toObject(),
+          weeklyOff: targetWeeklyOff,
         };
       }
 
-      if (bodyData.emergencyContact) {
-        employee.emergencyContact = {
-          ...employee.emergencyContact?.toObject(),
-          ...bodyData.emergencyContact,
+      // Update emergencyContact (supporting both nested object and flat fields like emergencyContactName, emergencyRelationship, emergencyPhoneNumber, etc.)
+      const emergencyObj = typeof bodyData.emergencyContact === "object" ? bodyData.emergencyContact : {};
+      const currentEmergency = employee.emergencyContact?.toObject() || {};
+
+      const contactName =
+        bodyData.emergencyContactName !== undefined
+          ? bodyData.emergencyContactName
+          : bodyData.contactName !== undefined
+            ? bodyData.contactName
+            : emergencyObj.contactName;
+
+      const relationship =
+        bodyData.emergencyRelationship !== undefined
+          ? bodyData.emergencyRelationship
+          : bodyData.relationship !== undefined
+            ? bodyData.relationship
+            : emergencyObj.relationship;
+
+      const emergencyPhone =
+        bodyData.emergencyPhoneNumber !== undefined
+          ? bodyData.emergencyPhoneNumber
+          : bodyData.emergencyPhone !== undefined
+            ? bodyData.emergencyPhone
+            : emergencyObj.phoneNumber;
+
+      const emergencyAltPhone =
+        bodyData.emergencyAlternatePhone !== undefined
+          ? bodyData.emergencyAlternatePhone
+          : emergencyObj.alternatePhone;
+
+      employee.emergencyContact = {
+        contactName: contactName !== undefined ? String(contactName).trim() : currentEmergency.contactName || "",
+        relationship: relationship !== undefined ? String(relationship).trim() : currentEmergency.relationship || "",
+        phoneNumber: emergencyPhone !== undefined ? String(emergencyPhone).trim() : currentEmergency.phoneNumber || "",
+        alternatePhone: emergencyAltPhone !== undefined ? String(emergencyAltPhone).trim() : currentEmergency.alternatePhone || "",
+      };
+
+      // Update additionalInfo (supporting both nested object and flat fields like employmentNotes)
+      const addInfoObj = typeof bodyData.additionalInfo === "object" ? bodyData.additionalInfo : {};
+      const currentAddInfo = employee.additionalInfo?.toObject() || {};
+
+      const employmentNotes =
+        bodyData.employmentNotes !== undefined
+          ? bodyData.employmentNotes
+          : addInfoObj.employmentNotes;
+
+      employee.additionalInfo = {
+        employmentNotes: employmentNotes !== undefined ? String(employmentNotes).trim() : currentAddInfo.employmentNotes || "",
+      };
+
+      // Update documents (supporting URLs passed in body)
+      if (!employee.documents) {
+        employee.documents = {
+          panCard: null,
+          aadhaarCard: null,
+          addressProof: null,
+          educationCertificate: null,
+          experienceLetter: null,
+          joiningLetter: null,
+          otherDocuments: [],
         };
       }
+      const docFields = [
+        "panCard", "aadhaarCard", "addressProof", "educationCertificate",
+        "experienceLetter", "joiningLetter"
+      ];
+      docFields.forEach((field) => {
+        if (bodyData[field] !== undefined && typeof bodyData[field] === "string" && bodyData[field].trim() !== "") {
+          employee.documents[field] = bodyData[field].trim();
+        }
+      });
+      if (bodyData.documents && typeof bodyData.documents === "object") {
+        docFields.forEach((field) => {
+          if (bodyData.documents[field] !== undefined && typeof bodyData.documents[field] === "string" && bodyData.documents[field].trim() !== "") {
+            employee.documents[field] = bodyData.documents[field].trim();
+          }
+        });
+      }
 
-      if (bodyData.additionalInfo) {
-        employee.additionalInfo = {
-          ...employee.additionalInfo?.toObject(),
-          ...bodyData.additionalInfo,
+      // Update Salary & Compensation Details (Optional in update)
+      if (bodyData.salary !== undefined && bodyData.salary !== null && String(bodyData.salary).trim() !== "") {
+        const num = Number(bodyData.salary);
+        if (isNaN(num) || num <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Salary must be a valid positive amount!",
+          });
+        }
+        employee.salary = num;
+      }
+
+      employee.salaryType = "Monthly";
+
+      const updateSalaryDetailsObj =
+        typeof bodyData.salaryDetails === "object" && bodyData.salaryDetails !== null
+          ? bodyData.salaryDetails
+          : {};
+      const currentSalaryDetails = employee.salaryDetails?.toObject() || {};
+
+      const hasSalaryDetailsPayload =
+        bodyData.salaryDetails !== undefined ||
+        bodyData.basicSalary !== undefined ||
+        bodyData.hra !== undefined ||
+        bodyData.allowances !== undefined ||
+        bodyData.paymentMethod !== undefined ||
+        bodyData.bankName !== undefined ||
+        bodyData.accountNumber !== undefined ||
+        bodyData.ifscCode !== undefined ||
+        bodyData.currency !== undefined;
+
+      if (hasSalaryDetailsPayload) {
+        const updatedBasicSalary =
+          updateSalaryDetailsObj.basicSalary !== undefined && updateSalaryDetailsObj.basicSalary !== ""
+            ? Number(updateSalaryDetailsObj.basicSalary)
+            : bodyData.basicSalary !== undefined && bodyData.basicSalary !== ""
+              ? Number(bodyData.basicSalary)
+              : currentSalaryDetails.basicSalary !== undefined
+                ? currentSalaryDetails.basicSalary
+                : employee.salary > 0
+                  ? Math.round(employee.salary * 0.4)
+                  : 0;
+
+        const updatedHra =
+          updateSalaryDetailsObj.hra !== undefined && updateSalaryDetailsObj.hra !== ""
+            ? Number(updateSalaryDetailsObj.hra)
+            : bodyData.hra !== undefined && bodyData.hra !== ""
+              ? Number(bodyData.hra)
+              : currentSalaryDetails.hra !== undefined
+                ? currentSalaryDetails.hra
+                : updatedBasicSalary > 0
+                  ? Math.round(updatedBasicSalary * 0.4)
+                  : 0;
+
+        const updatedAllowances =
+          updateSalaryDetailsObj.allowances !== undefined && updateSalaryDetailsObj.allowances !== ""
+            ? Number(updateSalaryDetailsObj.allowances)
+            : bodyData.allowances !== undefined && bodyData.allowances !== ""
+              ? Number(bodyData.allowances)
+              : currentSalaryDetails.allowances !== undefined
+                ? currentSalaryDetails.allowances
+                : employee.salary > (updatedBasicSalary + updatedHra)
+                  ? employee.salary - (updatedBasicSalary + updatedHra)
+                  : 0;
+
+        employee.salaryDetails = {
+          currency:
+            updateSalaryDetailsObj.currency !== undefined
+              ? String(updateSalaryDetailsObj.currency).trim()
+              : bodyData.currency !== undefined
+                ? String(bodyData.currency).trim()
+                : currentSalaryDetails.currency || "INR",
+          basicSalary: isNaN(updatedBasicSalary) ? 0 : updatedBasicSalary,
+          hra: isNaN(updatedHra) ? 0 : updatedHra,
+          allowances: isNaN(updatedAllowances) ? 0 : updatedAllowances,
+          paymentMethod:
+            updateSalaryDetailsObj.paymentMethod !== undefined
+              ? updateSalaryDetailsObj.paymentMethod
+              : bodyData.paymentMethod !== undefined
+                ? bodyData.paymentMethod
+                : currentSalaryDetails.paymentMethod || "Bank Transfer",
+          bankName:
+            updateSalaryDetailsObj.bankName !== undefined
+              ? String(updateSalaryDetailsObj.bankName).trim()
+              : bodyData.bankName !== undefined
+                ? String(bodyData.bankName).trim()
+                : currentSalaryDetails.bankName || "",
+          accountNumber:
+            updateSalaryDetailsObj.accountNumber !== undefined
+              ? String(updateSalaryDetailsObj.accountNumber).trim()
+              : bodyData.accountNumber !== undefined
+                ? String(bodyData.accountNumber).trim()
+                : currentSalaryDetails.accountNumber || "",
+          ifscCode:
+            updateSalaryDetailsObj.ifscCode !== undefined
+              ? String(updateSalaryDetailsObj.ifscCode).trim()
+              : bodyData.ifscCode !== undefined
+                ? String(bodyData.ifscCode).trim()
+                : currentSalaryDetails.ifscCode || "",
+        };
+      } else if (bodyData.salary !== undefined && (!employee.salaryDetails || !employee.salaryDetails.basicSalary)) {
+        const basic = Math.round(employee.salary * 0.4);
+        const hra = Math.round(basic * 0.4);
+        const allowances = Math.max(0, employee.salary - (basic + hra));
+        employee.salaryDetails = {
+          ...currentSalaryDetails,
+          currency: currentSalaryDetails.currency || "INR",
+          basicSalary: basic,
+          hra: hra,
+          allowances: allowances,
+          paymentMethod: currentSalaryDetails.paymentMethod || "Bank Transfer",
         };
       }
 
@@ -652,12 +1312,18 @@ export class EmployeeController {
       const populatedEmployee = await UserModel.findById(employee._id)
         .select("-password -otp")
         .populate("department", "departmentName icon color")
-        .populate("designation", "designationName level icon");
+        .populate("designation", "designationName level icon")
+        .populate("shift", "shiftName startTime endTime durationHours workHoursDisplay breakTime teaBreaks color")
+        .populate("customRole", "roleTitle category badgeColor permissions");
+
+      const resultObj = populatedEmployee.toObject();
+      resultObj.weeklyOff = employee.shiftAndSchedule?.weeklyOff || "Sat - Sun";
+      delete resultObj.shiftAndSchedule;
 
       return res.status(200).json({
         success: true,
         message: "Employee profile updated successfully",
-        result: populatedEmployee,
+        result: resultObj,
       });
     } catch (error) {
       console.error("Update Employee Error:", error.message);

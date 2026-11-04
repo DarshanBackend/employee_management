@@ -111,13 +111,18 @@ export class DepartmentController {
 
   static async getAllDepartments(req, res) {
     try {
-      const { search, page, limit } = req.query;
+      const { search, q, status, page, limit } = req.query;
 
       const filter = { isDeleted: false };
 
-      if (search && search.trim()) {
-        const regex = new RegExp(search.trim(), "i");
+      const queryTerm = (search || q || "").trim();
+      if (queryTerm) {
+        const regex = new RegExp(queryTerm, "i");
         filter.$or = [{ departmentName: regex }, { description: regex }];
+      }
+
+      if (status && ["Active", "Inactive"].includes(status.trim())) {
+        filter.status = status.trim();
       }
 
       let query = DepartmentModel.find(filter)

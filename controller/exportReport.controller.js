@@ -137,10 +137,17 @@ const fetchReportData = async (category, department, includeArchived) => {
 
     case "Payroll & Salary Register": {
       return filteredEmployees.map((emp, index) => {
-        const ctc = 300000 + (index % 10) * 50000;
-        const monthly = Math.round(ctc / 12);
-        const basic = Math.round(monthly * 0.4);
-        const hra = Math.round(basic * 0.4);
+        const empSalary = Number(emp.salary) || 0;
+        const monthly = empSalary > 0
+          ? (emp.salaryType === "Annual" ? Math.round(empSalary / 12) : empSalary)
+          : Math.round((300000 + (index % 10) * 50000) / 12);
+        const ctc = monthly * 12;
+        const basic = (emp.salaryDetails?.basicSalary && emp.salaryDetails.basicSalary > 0)
+          ? emp.salaryDetails.basicSalary
+          : Math.round(monthly * 0.4);
+        const hra = (emp.salaryDetails?.hra && emp.salaryDetails.hra > 0)
+          ? emp.salaryDetails.hra
+          : Math.round(basic * 0.4);
         const pf = Math.round(basic * 0.12);
         const pt = 200;
         const net = monthly - (pf + pt);

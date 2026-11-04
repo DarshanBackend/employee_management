@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { connectDB } from "./DB/connectdb.js";
 import IndexRoute from "./routes/index.routes.js";
+import { initBreakTrackerCron } from "./services/breakTracker.service.js";
 import dns from "node:dns/promises";
 
 dotenv.config();
@@ -66,4 +67,5 @@ app.use("/api", IndexRoute);
 const PORT = process.env.PORT || 9000;
 httpServer.listen(PORT, () => {
   console.log(`Language_Learning Server is running on port : ${PORT}`);
+  initBreakTrackerCron(io);
 });

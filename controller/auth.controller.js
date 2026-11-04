@@ -596,16 +596,30 @@ export class AuthController {
   static async getUser(req, res) {
     try {
       const id = req.user._id;
-      const user = await UserModel.findById(id).select("-password -otp");
+      const user = await UserModel.findById(id)
+        .select("-password -otp")
+        .populate("department", "departmentName icon color")
+        .populate("designation", "designationName level icon")
+        .populate("shift", "shiftName startTime endTime durationHours workHoursDisplay breakTime teaBreaks teaBreakCount teaBreakDuration color")
+        .populate("shiftAndSchedule.shift", "shiftName startTime endTime durationHours workHoursDisplay breakTime teaBreaks teaBreakCount teaBreakDuration color")
+        .populate("customRole", "roleTitle category badgeColor permissions");
 
       if (!user) {
         return res.status(404).json({ success: false, message: "User not found" });
       }
 
+      const userObj = user.toObject();
+
+      // 🌟 ADMIN HAS NO SHIFT OR SHIFT TIMINGS 🌟
+      if (userObj.role === "admin") {
+        delete userObj.shift;
+        delete userObj.shiftAndSchedule;
+      }
+
       return res.status(200).json({
         success: true,
         message: "User profile fetched successfully",
-        result: user,
+        result: userObj,
       });
     } catch (error) {
       console.error("Get User Error:", error.message);

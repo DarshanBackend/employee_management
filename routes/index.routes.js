@@ -4,6 +4,8 @@ import { EmployeeController } from "../controller/employee.controller.js";
 import { DepartmentController } from "../controller/department.controller.js";
 import { DesignationController } from "../controller/designation.controller.js";
 import { LeaveTypeController } from "../controller/leaveType.controller.js";
+import { LeavePolicyController } from "../controller/leavePolicy.controller.js";
+import { LeaveController } from "../controller/leave.controller.js";
 import { HolidayController } from "../controller/holiday.controller.js";
 import { AttendanceRuleController } from "../controller/attendanceRule.controller.js";
 import { PayrollController } from "../controller/payroll.controller.js";
@@ -12,6 +14,12 @@ import { ReportsAnalyticsController } from "../controller/reportsAnalytics.contr
 import { RoleController } from "../controller/role.controller.js";
 import { OrganizationController } from "../controller/organization.controller.js";
 import { AuditLogController } from "../controller/auditLog.controller.js";
+import { DocumentController } from "../controller/document.controller.js";
+import { DocumentTemplateController } from "../controller/documentTemplate.controller.js";
+import { ShiftController } from "../controller/shift.controller.js";
+import { AttendanceController } from "../controller/attendance.controller.js";
+import { PendingActionController } from "../controller/pendingAction.controller.js";
+import { HomeController } from "../controller/home.controller.js";
 import {
   getProfile,
   updateProfile,
@@ -53,6 +61,8 @@ indexRouter.post("/auth/forgot-password", AuthController.sendForgotMailOtp);
 indexRouter.post("/auth/verify-otp", AuthController.verifyForgetOtp);
 indexRouter.post("/auth/reset-password", AuthController.resetPassword);
 
+indexRouter.get("/getHomeDashboard", UserAuth, HomeController.getHomeDashboard);
+
 indexRouter.post("/addEmployee", UserAuth, adminAuth, employeeUploadFields, EmployeeController.addEmployee);
 indexRouter.get("/getAllEmployees", UserAuth, adminAuth, EmployeeController.getAllEmployees);
 indexRouter.get("/getEmployeeById/:id", UserAuth, EmployeeController.getEmployeeById);
@@ -79,7 +89,23 @@ indexRouter.get("/getAllLeaveTypes", UserAuth, LeaveTypeController.getAllLeaveTy
 indexRouter.get("/getLeaveTypeById/:id", UserAuth, LeaveTypeController.getLeaveTypeById);
 indexRouter.patch("/updateLeaveType/:id", UserAuth, adminAuth, upload.single("icon"), LeaveTypeController.updateLeaveType);
 indexRouter.delete("/deleteLeaveType/:id", UserAuth, adminAuth, LeaveTypeController.deleteLeaveType);
+indexRouter.get("/getLeaveTypeDropdown", UserAuth, LeaveTypeController.getLeaveTypeDropdown);
 indexRouter.post("/seedDefaultLeaveTypes", UserAuth, adminAuth, LeaveTypeController.seedDefaultLeaveTypes);
+
+indexRouter.post("/addLeavePolicy", UserAuth, adminAuth, LeavePolicyController.addLeavePolicy);
+indexRouter.get("/getAllLeavePolicies", UserAuth, LeavePolicyController.getAllLeavePolicies);
+indexRouter.get("/getLeavePolicyById/:id", UserAuth, LeavePolicyController.getLeavePolicyById);
+indexRouter.patch("/updateLeavePolicy/:id", UserAuth, adminAuth, LeavePolicyController.updateLeavePolicy);
+indexRouter.delete("/deleteLeavePolicy/:id", UserAuth, adminAuth, LeavePolicyController.deleteLeavePolicy);
+
+indexRouter.post("/applyLeave", UserAuth, LeaveController.applyLeave);
+indexRouter.get("/getMyLeaves", UserAuth, LeaveController.getMyLeaves);
+indexRouter.get("/getLeaveBalances", UserAuth, LeaveController.getMyLeaveBalances);
+indexRouter.delete("/cancelLeave/:id", UserAuth, LeaveController.cancelLeave);
+indexRouter.get("/getLeaveById/:id", UserAuth, LeaveController.getLeaveById);
+
+indexRouter.get("/getAllLeaves", UserAuth, adminAuth, LeaveController.getAllLeaves);
+indexRouter.patch("/actionLeave/:id", UserAuth, adminAuth, LeaveController.actionLeave);
 
 indexRouter.post("/addHoliday", UserAuth, adminAuth, HolidayController.addHoliday);
 indexRouter.get("/getAllHolidays", UserAuth, HolidayController.getAllHolidays);
@@ -90,17 +116,50 @@ indexRouter.get("/getHolidayCalendar", UserAuth, HolidayController.getCalendarHo
 
 indexRouter.get("/getAttendanceRules", UserAuth, AttendanceRuleController.getAttendanceRules);
 indexRouter.patch("/updateAttendanceRules", UserAuth, adminAuth, AttendanceRuleController.updateAllAttendanceRules);
-indexRouter.patch("/updateWorkingHours", UserAuth, adminAuth, AttendanceRuleController.updateWorkingHours);
-indexRouter.patch("/updateGraceTime", UserAuth, adminAuth, AttendanceRuleController.updateGraceTime);
-indexRouter.patch("/updateBreakTime", UserAuth, adminAuth, AttendanceRuleController.updateBreakTime);
 indexRouter.patch("/updateOvertimeRules", UserAuth, adminAuth, AttendanceRuleController.updateOvertimeRules);
 indexRouter.patch("/updateAutoAttendance", UserAuth, adminAuth, AttendanceRuleController.updateAutoAttendance);
 indexRouter.patch("/updateGeofencing", UserAuth, adminAuth, AttendanceRuleController.updateGeofencing);
 indexRouter.patch("/updateIpRestriction", UserAuth, adminAuth, AttendanceRuleController.updateIpRestriction);
 
+indexRouter.post("/attendance/checkIn", UserAuth, AttendanceController.checkIn);
+indexRouter.post("/attendance/checkOut", UserAuth, AttendanceController.checkOut);
+indexRouter.get("/attendance/todayStatus", UserAuth, AttendanceController.getTodayAttendanceStatus);
+indexRouter.post("/attendance/resumeTracker", UserAuth, AttendanceController.startTracker);
+indexRouter.post("/attendance/pauseTracker", UserAuth, AttendanceController.pauseTracker);
+indexRouter.get("/attendance/breakSummary", UserAuth, AttendanceController.getBreakSummary);
+
+indexRouter.post("/attendance/applyRegularization", UserAuth, AttendanceController.applyRegularization);
+indexRouter.get("/attendance/myRegularizations", UserAuth, AttendanceController.getMyRegularizations);
+indexRouter.get("/attendance/regularizationInbox", UserAuth, adminAuth, AttendanceController.getRegularizationInbox);
+indexRouter.patch("/attendance/actionRegularization/:id", UserAuth, adminAuth, AttendanceController.actionRegularization);
+
+indexRouter.get("/pendingActions", UserAuth, adminAuth, PendingActionController.getPendingActions);
+indexRouter.patch("/pendingActions/action/:type/:id", UserAuth, adminAuth, PendingActionController.actionPendingRequest);
+indexRouter.post("/pendingActions/approveAll", UserAuth, adminAuth, PendingActionController.approveAllPendingActions);
+
+indexRouter.post("/addShift", UserAuth, adminAuth, ShiftController.addShift);
+indexRouter.get("/getAllShifts", UserAuth, ShiftController.getAllShifts);
+indexRouter.get("/getShiftById/:id", UserAuth, ShiftController.getShiftById);
+indexRouter.patch("/updateShift/:id", UserAuth, adminAuth, ShiftController.updateShift);
+indexRouter.delete("/deleteShift/:id", UserAuth, adminAuth, ShiftController.deleteShift);
+indexRouter.get("/getShiftDropdown", UserAuth, ShiftController.getShiftDropdown);
+
+indexRouter.get("/getWeeklyRoster", UserAuth, ShiftController.getWeeklyRoster);
+indexRouter.post("/assignWeeklyRoster", UserAuth, adminAuth, ShiftController.assignWeeklyRoster);
+indexRouter.post("/assignEmployeeShift", UserAuth, adminAuth, ShiftController.assignEmployeeShift);
+
 indexRouter.get("/getPayrollSettings", UserAuth, PayrollController.getPayrollSettings);
 indexRouter.patch("/updatePayrollSettings", UserAuth, adminAuth, PayrollController.updatePayrollSettings);
 indexRouter.post("/calculateSalaryBreakdown", UserAuth, PayrollController.calculateSalaryBreakdown);
+
+indexRouter.get("/payroll/salaryStructures", UserAuth, PayrollController.getSalaryStructures);
+indexRouter.post("/payroll/generatePayslip", UserAuth, adminAuth, PayrollController.generatePayslip);
+indexRouter.get("/payroll/getPayslip/:employeeId", UserAuth, PayrollController.getPayslip);
+
+indexRouter.get("/payroll/preRunCalculations", UserAuth, adminAuth, PayrollController.getPreRunCalculations);
+indexRouter.post("/payroll/executeMonthlyPayroll", UserAuth, adminAuth, PayrollController.executeMonthlyPayroll);
+indexRouter.get("/payroll/getAllPayrollRuns", UserAuth, adminAuth, PayrollController.getAllPayrollRuns);
+indexRouter.get("/payroll/getPayrollRunById/:id", UserAuth, adminAuth, PayrollController.getPayrollRunById);
 
 indexRouter.get("/getExportFormOptions", UserAuth, ExportReportController.getExportFormOptions);
 indexRouter.get("/getRecentExports", UserAuth, ExportReportController.getRecentExports);
@@ -139,6 +198,25 @@ indexRouter.get("/getAuditLogById/:id", UserAuth, AuditLogController.getAuditLog
 indexRouter.get("/getAuditLogDiff/:id", UserAuth, AuditLogController.getAuditLogDiff);
 indexRouter.post("/createAuditLog", UserAuth, adminAuth, AuditLogController.createAuditLog);
 indexRouter.get("/exportAuditLogs", UserAuth, adminAuth, AuditLogController.exportAuditLogs);
+
+indexRouter.get("/getAllDocuments", UserAuth, DocumentController.getAllDocuments);
+indexRouter.get("/getDocumentById/:id", UserAuth, DocumentController.getDocumentById);
+indexRouter.get("/getDocumentFormOptions", UserAuth, DocumentController.getDocumentFormOptions);
+indexRouter.post("/uploadDocument", UserAuth, upload.single("file"), DocumentController.uploadDocument);
+indexRouter.get("/previewDocument/:id", UserAuth, DocumentController.previewDocument);
+indexRouter.get("/downloadDocument/:id", UserAuth, DocumentController.downloadDocument);
+indexRouter.patch("/updateDocumentStatus/:id", UserAuth, adminAuth, DocumentController.updateDocumentStatus);
+indexRouter.delete("/deleteDocument/:id", UserAuth, adminAuth, DocumentController.deleteDocument);
+
+indexRouter.get("/getDocumentTemplatePresets", UserAuth, DocumentTemplateController.getPresets);
+indexRouter.get("/getDocumentTemplateVariables", UserAuth, DocumentTemplateController.getSmartVariables);
+indexRouter.get("/getAllDocumentTemplates", UserAuth, DocumentTemplateController.getAllTemplates);
+indexRouter.get("/getDocumentTemplateById/:id", UserAuth, DocumentTemplateController.getTemplateById);
+indexRouter.post("/createDocumentTemplate", UserAuth, adminAuth, upload.single("attachment"), DocumentTemplateController.createTemplate);
+indexRouter.patch("/updateDocumentTemplate/:id", UserAuth, adminAuth, upload.single("attachment"), DocumentTemplateController.updateTemplate);
+indexRouter.delete("/deleteDocumentTemplate/:id", UserAuth, adminAuth, DocumentTemplateController.deleteTemplate);
+indexRouter.post("/previewDocumentTemplate/:id", UserAuth, DocumentTemplateController.previewTemplate);
+indexRouter.post("/generateDocumentTemplate/:id", UserAuth, DocumentTemplateController.generateDocument);
 
 indexRouter.post("/auth/change-password", UserAuth, AuthController.changePassword);
 

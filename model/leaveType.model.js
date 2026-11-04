@@ -36,6 +36,32 @@ const LeaveTypeSchema = new mongoose.Schema(
       trim: true,
       default: "#EF4444",
     },
+    // Organization Leave Policy Rules
+    accrualMode: {
+      type: String,
+      trim: true,
+      default: "Monthly accrual (half day allowed)",
+    },
+    carryForwardCap: {
+      type: String,
+      trim: true,
+      default: "Lapses at Year-End",
+    },
+    maxConsecutiveDays: {
+      type: Number,
+      default: 7,
+      min: [1, "Max consecutive days must be at least 1"],
+    },
+    noticePeriod: {
+      type: String,
+      trim: true,
+      default: "2 Days in Advance",
+    },
+    approvalChain: {
+      type: String,
+      trim: true,
+      default: "Reporting Manager",
+    },
     status: {
       type: String,
       enum: ["Active", "Inactive"],
