@@ -3,6 +3,7 @@ import LeaveModel from "../model/leave.model.js";
 import AttendanceRegularizationModel from "../model/attendanceRegularization.model.js";
 import AttendanceModel from "../model/attendance.model.js";
 import DocumentModel from "../model/document.model.js";
+import ProfileUpdateRequestModel from "../model/profileUpdateRequest.model.js";
 import PayrollRunModel from "../model/payrollRun.model.js";
 import UserModel from "../model/user.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
@@ -86,18 +87,21 @@ export class PendingActionController {
         pendingAttendanceCount,
         pendingPayrollCount,
         pendingDocumentsCount,
+        pendingProfileUpdatesCount,
       ] = await Promise.all([
         LeaveModel.countDocuments({ status: "Pending" }),
         AttendanceRegularizationModel.countDocuments({ status: "Pending" }),
         PayrollRunModel.countDocuments({ status: { $in: ["Draft", "Ready"] } }),
         DocumentModel.countDocuments({ verificationStatus: "Pending Review" }),
+        ProfileUpdateRequestModel.countDocuments({ status: "Pending" }),
       ]);
 
       const totalPending =
         pendingLeavesCount +
         pendingAttendanceCount +
         pendingPayrollCount +
-        pendingDocumentsCount;
+        pendingDocumentsCount +
+        pendingProfileUpdatesCount;
 
       const summary = {
         totalPending,
@@ -105,6 +109,7 @@ export class PendingActionController {
         attendanceFixes: pendingAttendanceCount,
         payrollRuns: pendingPayrollCount,
         employeeDocuments: pendingDocumentsCount,
+        profileUpdateRequests: pendingProfileUpdatesCount,
       };
 
       const tabs = [
@@ -112,7 +117,11 @@ export class PendingActionController {
         { label: "Leaves", key: "leaves", count: pendingLeavesCount },
         { label: "Attendance", key: "attendance", count: pendingAttendanceCount },
         { label: "Payroll", key: "payroll", count: pendingPayrollCount },
-        { label: "Employees", key: "employees", count: pendingDocumentsCount },
+        {
+          label: "Employees",
+          key: "employees",
+          count: pendingDocumentsCount + pendingProfileUpdatesCount,
+        },
       ];
 
       let searchUserIds = null;
@@ -258,6 +267,59 @@ export class PendingActionController {
       }
 
       if (activeCategory === "all" || activeCategory === "employees") {
+        const updateFilter = { status: "Pending" };
+        if (searchRegex) {
+          updateFilter.$or = [
+            { employee: { $in: searchUserIds } },
+            { fieldToUpdate: searchRegex },
+            { proposedValue: searchRegex },
+            { reason: searchRegex },
+          ];
+        }
+
+        const profileUpdates = await ProfileUpdateRequestModel.find(updateFilter)
+          .populate({
+            path: "employee",
+            select: "name firstName lastName employeeId email avatarUrl department designation roleTitle",
+            populate: [
+              { path: "department", select: "departmentName color" },
+              { path: "designation", select: "designationName designationTitle" },
+            ],
+          })
+          .sort({ createdAt: -1 });
+
+        const mappedUpdates = profileUpdates.map((pu) => {
+          const empInfo = formatEmployeeInfo(pu.employee);
+          const submittedDateStr = formatDDMMYYYY(pu.createdAt);
+
+          return {
+            _id: pu._id,
+            type: "Employees",
+            categoryKey: "employees",
+            subType: pu.fieldToUpdate,
+            status: "Pending",
+            badgeColor: "#3B82F6",
+            tag: `Employees • ${pu.fieldToUpdate}`,
+            date: submittedDateStr,
+            submittedDate: submittedDateStr,
+            createdAt: pu.createdAt,
+            description: `Update requested: ${pu.fieldToUpdate}. Reason: ${pu.reason}`,
+            duration: `New: ${pu.proposedValue}`,
+            durationText: `Field: ${pu.fieldToUpdate}  Current: ${pu.currentValue || "N/A"}  Proposed: ${pu.proposedValue}`,
+            details: {
+              requestId: pu._id,
+              profileUpdateRequestId: pu._id,
+              fieldToUpdate: pu.fieldToUpdate,
+              currentValue: pu.currentValue,
+              proposedValue: pu.proposedValue,
+              reason: pu.reason,
+            },
+            employee: empInfo,
+          };
+        });
+
+        allItems.push(...mappedUpdates);
+
         const docFilter = { verificationStatus: "Pending Review" };
         if (searchRegex) {
           docFilter.$or = [
@@ -546,10 +608,81 @@ export class PendingActionController {
         );
       }
 
-      if (normalizedType === "employees" || normalizedType === "document" || normalizedType === "documents") {
+      if (
+        normalizedType === "employees" ||
+        normalizedType === "employee" ||
+        normalizedType === "profile_update" ||
+        normalizedType === "profile" ||
+        normalizedType === "document" ||
+        normalizedType === "documents"
+      ) {
+        const profileUpdateReq = await ProfileUpdateRequestModel.findById(id).populate("employee");
+        if (profileUpdateReq) {
+          if (profileUpdateReq.status !== "Pending") {
+            return sendBadRequestResponse(
+              res,
+              `This update request has already been ${profileUpdateReq.status.toLowerCase()}!`
+            );
+          }
+
+          if (isApprove) {
+            const user = await UserModel.findById(profileUpdateReq.employee._id);
+            if (user) {
+              const field = profileUpdateReq.fieldToUpdate;
+              const newVal = profileUpdateReq.proposedValue;
+
+              if (field === "Legal Name Correction") {
+                user.name = newVal.trim();
+                const nameParts = newVal.trim().split(" ");
+                user.firstName = nameParts[0] || newVal.trim();
+                user.lastName = nameParts.slice(1).join(" ") || "";
+              } else if (field === "Bank Account Number") {
+                if (!user.salaryDetails) user.salaryDetails = {};
+                user.salaryDetails.accountNumber = newVal.trim();
+              } else if (field === "PAN / Tax Identification") {
+                if (!user.documents) user.documents = {};
+                user.documents.panCard = newVal.trim();
+              } else if (field === "Educational Degree Update") {
+                if (!user.additionalInfo) user.additionalInfo = {};
+                const prev = user.additionalInfo.employmentNotes || "";
+                user.additionalInfo.employmentNotes = prev
+                  ? `${prev} | Degree: ${newVal.trim()}`
+                  : `Degree: ${newVal.trim()}`;
+              } else if (field === "Work Email") {
+                user.email = newVal.trim().toLowerCase();
+              } else if (field === "Employment Type") {
+                user.employmentType = newVal.trim();
+              }
+              await user.save();
+            }
+
+            profileUpdateReq.status = "Approved";
+          } else {
+            profileUpdateReq.status = "Rejected";
+          }
+
+          profileUpdateReq.adminRemarks = adminRemarks;
+          profileUpdateReq.actionBy = req.user?._id;
+          profileUpdateReq.actionAt = new Date();
+          await profileUpdateReq.save();
+
+          await recordAuditLog(req, {
+            action: `${isApprove ? "Approved" : "Rejected"} Profile Update Request`,
+            category: "Employee Management",
+            description: `${isApprove ? "Approved" : "Rejected"} update for '${profileUpdateReq.fieldToUpdate}' of ${profileUpdateReq.employee?.name || "Employee"}`,
+            targetResource: `${profileUpdateReq.employee?.name || "Employee"} - ${profileUpdateReq.fieldToUpdate}`,
+          });
+
+          return sendSuccessResponse(
+            res,
+            `Profile update request ${profileUpdateReq.status.toLowerCase()} successfully!`,
+            profileUpdateReq
+          );
+        }
+
         const doc = await DocumentModel.findById(id).populate("employee");
         if (!doc) {
-          return sendNotFoundResponse(res, "Document not found");
+          return sendNotFoundResponse(res, "Document / update request not found");
         }
 
         if (isApprove) {
@@ -615,6 +748,7 @@ export class PendingActionController {
       let approvedLeaves = 0;
       let approvedAttendance = 0;
       let approvedDocuments = 0;
+      let approvedProfileUpdates = 0;
       let approvedPayroll = 0;
 
       if (activeCategory === "all" || activeCategory === "leaves") {
@@ -642,6 +776,45 @@ export class PendingActionController {
       }
 
       if (activeCategory === "all" || activeCategory === "employees") {
+        const pendingUpdates = await ProfileUpdateRequestModel.find({ status: "Pending" });
+        for (const pu of pendingUpdates) {
+          const user = await UserModel.findById(pu.employee);
+          if (user) {
+            const field = pu.fieldToUpdate;
+            const newVal = pu.proposedValue;
+            if (field === "Legal Name Correction") {
+              user.name = newVal.trim();
+              const nameParts = newVal.trim().split(" ");
+              user.firstName = nameParts[0] || newVal.trim();
+              user.lastName = nameParts.slice(1).join(" ") || "";
+            } else if (field === "Bank Account Number") {
+              if (!user.salaryDetails) user.salaryDetails = {};
+              user.salaryDetails.accountNumber = newVal.trim();
+            } else if (field === "PAN / Tax Identification") {
+              if (!user.documents) user.documents = {};
+              user.documents.panCard = newVal.trim();
+            } else if (field === "Educational Degree Update") {
+              if (!user.additionalInfo) user.additionalInfo = {};
+              const prev = user.additionalInfo.employmentNotes || "";
+              user.additionalInfo.employmentNotes = prev
+                ? `${prev} | Degree: ${newVal.trim()}`
+                : `Degree: ${newVal.trim()}`;
+            } else if (field === "Work Email") {
+              user.email = newVal.trim().toLowerCase();
+            } else if (field === "Employment Type") {
+              user.employmentType = newVal.trim();
+            }
+            await user.save();
+          }
+
+          pu.status = "Approved";
+          pu.adminRemarks = remarks;
+          pu.actionBy = req.user?._id;
+          pu.actionAt = new Date();
+          await pu.save();
+          approvedProfileUpdates++;
+        }
+
         const pendingDocs = await DocumentModel.find({ verificationStatus: "Pending Review" });
         for (const doc of pendingDocs) {
           doc.verificationStatus = "Verified";
@@ -664,7 +837,11 @@ export class PendingActionController {
       }
 
       const totalApproved =
-        approvedLeaves + approvedAttendance + approvedDocuments + approvedPayroll;
+        approvedLeaves +
+        approvedAttendance +
+        approvedDocuments +
+        approvedProfileUpdates +
+        approvedPayroll;
 
       await recordAuditLog(req, {
         action: "Bulk Approved Pending Actions",
@@ -679,6 +856,7 @@ export class PendingActionController {
           leaves: approvedLeaves,
           attendance: approvedAttendance,
           documents: approvedDocuments,
+          profileUpdates: approvedProfileUpdates,
           payroll: approvedPayroll,
         },
       });

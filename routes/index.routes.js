@@ -20,6 +20,9 @@ import { ShiftController } from "../controller/shift.controller.js";
 import { AttendanceController } from "../controller/attendance.controller.js";
 import { PendingActionController } from "../controller/pendingAction.controller.js";
 import { HomeController } from "../controller/home.controller.js";
+import { ProfileUpdateRequestController } from "../controller/profileUpdateRequest.controller.js";
+import { RequestHubController } from "../controller/requestHub.controller.js";
+import { AnnouncementController } from "../controller/announcement.controller.js";
 import {
   getProfile,
   updateProfile,
@@ -124,6 +127,7 @@ indexRouter.patch("/updateIpRestriction", UserAuth, adminAuth, AttendanceRuleCon
 indexRouter.post("/attendance/checkIn", UserAuth, AttendanceController.checkIn);
 indexRouter.post("/attendance/checkOut", UserAuth, AttendanceController.checkOut);
 indexRouter.get("/attendance/todayStatus", UserAuth, AttendanceController.getTodayAttendanceStatus);
+indexRouter.get("/attendance/getMonthlyHistory", UserAuth, AttendanceController.getMonthlyHistory);
 indexRouter.post("/attendance/resumeTracker", UserAuth, AttendanceController.startTracker);
 indexRouter.post("/attendance/pauseTracker", UserAuth, AttendanceController.pauseTracker);
 indexRouter.get("/attendance/breakSummary", UserAuth, AttendanceController.getBreakSummary);
@@ -154,6 +158,7 @@ indexRouter.post("/calculateSalaryBreakdown", UserAuth, PayrollController.calcul
 
 indexRouter.get("/payroll/salaryStructures", UserAuth, PayrollController.getSalaryStructures);
 indexRouter.post("/payroll/generatePayslip", UserAuth, adminAuth, PayrollController.generatePayslip);
+indexRouter.get("/payroll/getPayslip", UserAuth, PayrollController.getPayslip);
 indexRouter.get("/payroll/getPayslip/:employeeId", UserAuth, PayrollController.getPayslip);
 
 indexRouter.get("/payroll/preRunCalculations", UserAuth, adminAuth, PayrollController.getPreRunCalculations);
@@ -200,13 +205,14 @@ indexRouter.post("/createAuditLog", UserAuth, adminAuth, AuditLogController.crea
 indexRouter.get("/exportAuditLogs", UserAuth, adminAuth, AuditLogController.exportAuditLogs);
 
 indexRouter.get("/getAllDocuments", UserAuth, DocumentController.getAllDocuments);
+indexRouter.get("/getMyDocuments", UserAuth, DocumentController.getMyDocuments);
 indexRouter.get("/getDocumentById/:id", UserAuth, DocumentController.getDocumentById);
 indexRouter.get("/getDocumentFormOptions", UserAuth, DocumentController.getDocumentFormOptions);
 indexRouter.post("/uploadDocument", UserAuth, upload.single("file"), DocumentController.uploadDocument);
 indexRouter.get("/previewDocument/:id", UserAuth, DocumentController.previewDocument);
 indexRouter.get("/downloadDocument/:id", UserAuth, DocumentController.downloadDocument);
 indexRouter.patch("/updateDocumentStatus/:id", UserAuth, adminAuth, DocumentController.updateDocumentStatus);
-indexRouter.delete("/deleteDocument/:id", UserAuth, adminAuth, DocumentController.deleteDocument);
+indexRouter.delete("/deleteDocument/:id", UserAuth, DocumentController.deleteDocument);
 
 indexRouter.get("/getDocumentTemplatePresets", UserAuth, DocumentTemplateController.getPresets);
 indexRouter.get("/getDocumentTemplateVariables", UserAuth, DocumentTemplateController.getSmartVariables);
@@ -226,6 +232,26 @@ indexRouter.patch("/auth/update-fcm-token", UserAuth, AuthController.updateFcmTo
 
 indexRouter.patch("/user/updateProfile", UserAuth, upload.single("avatar"), updateProfile);
 indexRouter.get("/user/getProfile", UserAuth, getProfile);
+indexRouter.patch("/user/updateContactInfo", UserAuth, ProfileUpdateRequestController.saveContactChanges);
+indexRouter.post("/user/requestOfficialInfoUpdate", UserAuth, ProfileUpdateRequestController.submitRequest);
+indexRouter.get("/user/myProfileUpdateRequests", UserAuth, ProfileUpdateRequestController.getMyRequests);
+indexRouter.get("/admin/profileUpdateRequests", UserAuth, adminAuth, ProfileUpdateRequestController.getAllRequests);
+indexRouter.delete("/deleteProfileUpdateRequest/:id", UserAuth, ProfileUpdateRequestController.deleteRequest);
+indexRouter.patch("/admin/profileUpdateRequest/:id", UserAuth, adminAuth, ProfileUpdateRequestController.actionRequest);
+
+indexRouter.get("/user/myRequestsHub", UserAuth, RequestHubController.getMyRequestsHub);
+indexRouter.post("/user/submitExpenseRequest", UserAuth, RequestHubController.submitExpenseRequest);
+indexRouter.post("/submitExpenseRequest", UserAuth, RequestHubController.submitExpenseRequest);
+indexRouter.delete("/user/cancelRequest/:category/:id", UserAuth, RequestHubController.cancelRequest);
+
+indexRouter.post("/createAnnouncement", UserAuth, adminAuth, AnnouncementController.createAnnouncement);
+indexRouter.get("/getCompanyAnnouncements", UserAuth, AnnouncementController.getCompanyAnnouncements);
+indexRouter.get("/admin/announcements", UserAuth, adminAuth, AnnouncementController.getAllAnnouncements);
+indexRouter.get("/getRecipientOptions", UserAuth, AnnouncementController.getRecipientOptions);
+indexRouter.get("/getAnnouncementById", UserAuth, AnnouncementController.getAnnouncementById);
+indexRouter.get("/getAnnouncementById/:id", UserAuth, AnnouncementController.getAnnouncementById);
+indexRouter.patch("/updateAnnouncement/:id", UserAuth, adminAuth, AnnouncementController.updateAnnouncement);
+indexRouter.delete("/deleteAnnouncement/:id", UserAuth, adminAuth, AnnouncementController.deleteAnnouncement);
 
 indexRouter.patch("/user/updateSettings", UserAuth, updateSettings);
 indexRouter.get("/user/getSettings", UserAuth, getSettings);

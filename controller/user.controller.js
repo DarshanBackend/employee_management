@@ -1,8 +1,7 @@
 import UserModel from "../model/user.model.js";
-import UserSettingsModel from "../model/settings.model.js";
+import ProfileUpdateRequestModel from "../model/profileUpdateRequest.model.js";
 import AnalyticsModel from "../model/analytics.model.js";
 import { uploadFile, deleteFileFromS3 } from "../middleware/imageupload.js";
-import { checkUserSubscriptionAccess } from "../middleware/auth.middleware.js";
 
 const formatDate = (date) => {
   const d = new Date(date);
@@ -94,27 +93,95 @@ export const recordUserPractice = async (userOrId) => {
 
 export const getProfile = async (req, res) => {
   try {
-    const user = await UserModel.findById(req.user._id).select("-password -otp");
+    const user = await UserModel.findById(req.user._id)
+      .select("-password -otp")
+      .populate("department", "departmentName icon color")
+      .populate("designation", "designationName designationTitle level icon")
+      .populate("shift", "shiftName startTime endTime durationHours workHoursDisplay breakTime teaBreaks color")
+      .populate("shiftAndSchedule.shift", "shiftName startTime endTime durationHours workHoursDisplay breakTime teaBreaks color")
+      .populate("customRole", "roleTitle category badgeColor permissions");
+
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    await syncUserStreak(user);
-    const accessInfo = await checkUserSubscriptionAccess(user);
+    const userObj = user.toObject();
 
-    let settings = await UserSettingsModel.findOne({ userId: req.user._id });
-    if (!settings) {
-      settings = await UserSettingsModel.create({ userId: req.user._id });
+    if (userObj.role === "admin") {
+      delete userObj.shift;
+      delete userObj.shiftAndSchedule;
     }
+
+    userObj.departmentName = user.department?.departmentName || "";
+    userObj.designationName =
+      user.designation?.designationName ||
+      user.designation?.designationTitle ||
+      "";
+
+    const changeRequests = await ProfileUpdateRequestModel.find({
+      employee: req.user._id,
+    }).sort({ createdAt: -1 });
+
+    const formattedRequests = changeRequests.map((r) => {
+      const d = new Date(r.createdAt);
+      const day = String(d.getDate()).padStart(2, "0");
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const year = d.getFullYear();
+      return {
+        _id: r._id,
+        fieldToUpdate: r.fieldToUpdate,
+        currentValue: r.currentValue,
+        proposedValue: r.proposedValue,
+        reason: r.reason,
+        status: r.status,
+        adminRemarks: r.adminRemarks || "",
+        createdAt: r.createdAt,
+        formattedDate: `${day}-${month}-${year}`,
+        statusBadgeColor:
+          r.status === "Approved"
+            ? "#10B981"
+            : r.status === "Rejected"
+              ? "#EF4444"
+              : "#F59E0B",
+      };
+    });
+
+    userObj.submittedProfileChangeRequests = formattedRequests;
+
+    userObj.officialOrganizationDetails = {
+      employeeId: userObj.employeeId || String(userObj._id),
+      workEmail: userObj.email || "",
+      department: user.department?.departmentName || "Engineering",
+      departmentName: user.department?.departmentName || "Engineering",
+      designation: user.designation?.designationName || "Software Engineer",
+      designationName: user.designation?.designationName || "Software Engineer",
+      employmentType: userObj.employmentType || "Full-Time Permanent",
+      status: userObj.employeeStatus || "Active",
+    };
+
+    userObj.contactAndPersonalInformation = {
+      personalMobilePhone:
+        userObj.contactInfo?.mobileNumber || userObj.phone || "",
+      emergencyContactPerson: userObj.emergencyContact?.contactName || "",
+      emergencyContactNumber: userObj.emergencyContact?.phoneNumber || "",
+      emergencyContactPersonAndNumber:
+        userObj.emergencyContact?.contactName && userObj.emergencyContact?.phoneNumber
+          ? `${userObj.emergencyContact.contactName} - ${userObj.emergencyContact.phoneNumber}`
+          : userObj.emergencyContact?.contactName ||
+            userObj.emergencyContact?.phoneNumber ||
+            "",
+      currentResidentialAddress:
+        userObj.contactInfo?.address?.addressLine1 || "",
+      addressLine2: userObj.contactInfo?.address?.addressLine2 || "",
+      city: userObj.contactInfo?.address?.city || "",
+      state: userObj.contactInfo?.address?.state || "",
+      zipCode: userObj.contactInfo?.address?.zipCode || "",
+    };
 
     return res.status(200).json({
       success: true,
       message: "Profile retrieved successfully",
-      result: {
-        ...user.toObject(),
-        settings,
-        subscriptionStatus: accessInfo,
-      },
+      result: userObj,
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Server error", error: error.message });
@@ -124,7 +191,18 @@ export const getProfile = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { name, phone, onboarding } = req.body;
+    const {
+      name,
+      firstName,
+      lastName,
+      phone,
+      gender,
+      dateOfBirth,
+      maritalStatus,
+      bloodGroup,
+      nationality,
+      onboarding,
+    } = req.body;
 
     const user = await UserModel.findById(userId).select("-password -otp");
     if (!user) {
@@ -132,7 +210,14 @@ export const updateProfile = async (req, res) => {
     }
 
     if (name) user.name = name.trim();
+    if (firstName) user.firstName = firstName.trim();
+    if (lastName) user.lastName = lastName.trim();
     if (phone) user.phone = phone.trim();
+    if (gender !== undefined) user.gender = gender;
+    if (dateOfBirth !== undefined) user.dateOfBirth = dateOfBirth;
+    if (maritalStatus !== undefined) user.maritalStatus = maritalStatus;
+    if (bloodGroup !== undefined) user.bloodGroup = bloodGroup;
+    if (nationality) user.nationality = nationality.trim();
 
     if (req.file) {
       if (user.avatarUrl) {
@@ -162,10 +247,29 @@ export const updateProfile = async (req, res) => {
 
     await user.save();
 
+    const updatedUser = await UserModel.findById(userId)
+      .select("-password -otp")
+      .populate("department", "departmentName icon color")
+      .populate("designation", "designationName designationTitle level icon")
+      .populate("shift", "shiftName startTime endTime durationHours workHoursDisplay breakTime teaBreaks color")
+      .populate("shiftAndSchedule.shift", "shiftName startTime endTime durationHours workHoursDisplay breakTime teaBreaks color")
+      .populate("customRole", "roleTitle category badgeColor permissions");
+
+    const userObj = updatedUser.toObject();
+    if (userObj.role === "admin") {
+      delete userObj.shift;
+      delete userObj.shiftAndSchedule;
+    }
+    userObj.departmentName = updatedUser.department?.departmentName || "";
+    userObj.designationName =
+      updatedUser.designation?.designationName ||
+      updatedUser.designation?.designationTitle ||
+      "";
+
     return res.status(200).json({
       success: true,
       message: "Profile updated successfully",
-      result: user,
+      result: userObj,
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Server error", error: error.message });

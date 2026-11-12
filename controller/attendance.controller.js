@@ -1727,4 +1727,111 @@ export class AttendanceController {
       return sendErrorResponse(res, 500, "Failed to retrieve break summary", error);
     }
   }
+
+  static async getMonthlyHistory(req, res) {
+    try {
+      let targetEmployeeId = req.query.employeeId || req.query.employee;
+      if (!targetEmployeeId || req.user?.role === "employee") {
+        targetEmployeeId = req.user?._id;
+      }
+
+      if (!targetEmployeeId || !mongoose.Types.ObjectId.isValid(targetEmployeeId)) {
+        return sendBadRequestResponse(res, "Invalid employee ID");
+      }
+
+      const now = new Date();
+      const monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+      ];
+
+      let targetMonth = req.query.month;
+      let targetYear = req.query.year ? parseInt(req.query.year, 10) : now.getFullYear();
+
+      if (req.query.cycle && typeof req.query.cycle === "string") {
+        const parts = req.query.cycle.trim().split(" ");
+        if (parts.length >= 2) {
+          targetMonth = parts[0];
+          targetYear = parseInt(parts[1], 10) || targetYear;
+        } else {
+          targetMonth = parts[0];
+        }
+      }
+
+      let monthNum;
+      if (targetMonth) {
+        if (/^\d{1,2}$/.test(String(targetMonth))) {
+          monthNum = parseInt(targetMonth, 10);
+        } else {
+          const idx = monthNames.findIndex((m) => m.toLowerCase() === String(targetMonth).toLowerCase());
+          monthNum = idx >= 0 ? idx + 1 : now.getMonth() + 1;
+        }
+      } else {
+        monthNum = now.getMonth() + 1;
+      }
+
+      const paddedMonth = String(monthNum).padStart(2, "0");
+      const monthPrefix = `${targetYear}-${paddedMonth}`;
+      const monthName = monthNames[monthNum - 1];
+
+      const records = await AttendanceModel.find({
+        employee: targetEmployeeId,
+        date: new RegExp(`^${monthPrefix}`),
+      })
+        .sort({ date: -1 })
+        .lean();
+
+      let presentDays = 0;
+      let lateDays = 0;
+      let halfDays = 0;
+      let absentDays = 0;
+      let totalWorkMinutes = 0;
+
+      const history = records.map((item) => {
+        const st = item.status || "Present";
+        if (st === "Present") presentDays++;
+        else if (st === "Late") lateDays++;
+        else if (st === "Half Day") halfDays++;
+        else if (st === "Absent") absentDays++;
+
+        totalWorkMinutes += item.totalWorkMinutes || 0;
+
+        return {
+          _id: item._id,
+          date: item.date,
+          formattedDate: item.formattedDate || item.date,
+          checkInTime: item.checkInDisplay || null,
+          checkOutTime: item.checkOutDisplay || null,
+          totalWorkHours: item.totalWorkHoursDisplay || "0h 00m",
+          status: item.status || "Present",
+          isCheckInRegularized: Boolean(item.isCheckInRegularized),
+          isCheckOutRegularized: Boolean(item.isCheckOutRegularized),
+          breaksCount: Array.isArray(item.breaks) ? item.breaks.length : 0,
+          totalBreakLateMinutes: item.totalBreakLateMinutes || 0,
+        };
+      });
+
+      const totalHours = Math.floor(totalWorkMinutes / 60);
+      const totalMins = totalWorkMinutes % 60;
+      const totalHoursDisplay = `${totalHours}h ${String(totalMins).padStart(2, "0")}m`;
+
+      return sendSuccessResponse(res, "Monthly attendance history retrieved successfully", {
+        month: monthName,
+        year: targetYear,
+        cycle: `${monthName} ${targetYear}`,
+        summary: {
+          totalDays: records.length,
+          presentDays,
+          lateDays,
+          halfDays,
+          absentDays,
+          totalHours: totalHoursDisplay,
+        },
+        records: history,
+      });
+    } catch (error) {
+      console.error("Get Monthly History Error:", error);
+      return sendErrorResponse(res, 500, "Failed to retrieve monthly attendance history", error);
+    }
+  }
 }

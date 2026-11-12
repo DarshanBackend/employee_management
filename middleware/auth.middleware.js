@@ -32,28 +32,30 @@ export const UserAuth = async (req, res, next) => {
         return sendUnauthorizedResponse(res, "This account has been deleted.", "ACCOUNT_DELETED");
       }
 
-      const userTokenVersion = user.tokenVersion || 0;
-      if (
-        decoded.tokenVersion !== undefined &&
-        decoded.tokenVersion !== userTokenVersion
-      ) {
-        return sendUnauthorizedResponse(
-          res,
-          "Session expired or logged out. Please log in again.",
-          "SESSION_EXPIRED"
-        );
-      }
+      if (user.role !== "admin") {
+        const userTokenVersion = user.tokenVersion || 0;
+        if (
+          decoded.tokenVersion !== undefined &&
+          decoded.tokenVersion !== userTokenVersion
+        ) {
+          return sendUnauthorizedResponse(
+            res,
+            "Session expired or logged out. Please log in again.",
+            "SESSION_EXPIRED"
+          );
+        }
 
-      if (
-        user.lastLogoutAt &&
-        decoded.iat &&
-        decoded.iat * 1000 < new Date(user.lastLogoutAt).getTime()
-      ) {
-        return sendUnauthorizedResponse(
-          res,
-          "Session expired. You have logged out, please log in again.",
-          "SESSION_EXPIRED"
-        );
+        if (
+          user.lastLogoutAt &&
+          decoded.iat &&
+          decoded.iat * 1000 < new Date(user.lastLogoutAt).getTime() - 10000
+        ) {
+          return sendUnauthorizedResponse(
+            res,
+            "Session expired. You have logged out, please log in again.",
+            "SESSION_EXPIRED"
+          );
+        }
       }
 
       req.user = user;

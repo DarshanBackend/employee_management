@@ -1122,9 +1122,12 @@ export class PayrollController {
 
   static async getPayslip(req, res) {
     try {
-      const { employeeId } = req.params;
+      let targetEmployeeId = req.params.employeeId || req.query.employeeId;
+      if (!targetEmployeeId || targetEmployeeId === "me" || targetEmployeeId === "my") {
+        targetEmployeeId = req.user?._id;
+      }
 
-      if (!mongoose.Types.ObjectId.isValid(employeeId)) {
+      if (!targetEmployeeId || !mongoose.Types.ObjectId.isValid(targetEmployeeId)) {
         return sendBadRequestResponse(res, "Invalid employee ID");
       }
 
@@ -1159,11 +1162,11 @@ export class PayrollController {
 
         run = await PayrollRunModel.findOne({
           cycle: cycleName,
-          "payslips.employee": employeeId,
+          "payslips.employee": targetEmployeeId,
         });
       } else {
         run = await PayrollRunModel.findOne({
-          "payslips.employee": employeeId,
+          "payslips.employee": targetEmployeeId,
         }).sort({ createdAt: -1 });
 
         if (run) {
@@ -1178,7 +1181,7 @@ export class PayrollController {
       const cycleName = `${targetMonth} ${targetYear}`;
 
       if (run) {
-        const found = run.payslips.find((p) => String(p.employee) === String(employeeId));
+        const found = run.payslips.find((p) => String(p.employee) === String(targetEmployeeId));
         if (found) {
           return sendSuccessResponse(res, "Payslip fetched successfully", found);
         }
@@ -1186,7 +1189,7 @@ export class PayrollController {
 
       const settings = await getOrCreatePayrollSetting(req.user?._id);
 
-      const employee = await UserModel.findById(employeeId)
+      const employee = await UserModel.findById(targetEmployeeId)
         .select("-password -otp")
         .populate("department", "departmentName")
         .populate("designation", "designationName");

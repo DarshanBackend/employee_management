@@ -255,7 +255,7 @@ export class AuthController {
           tokenVersion: user.tokenVersion || 0,
         },
         AuthController.JWT_SECRET,
-        { expiresIn: "7d" }
+        { expiresIn: "30d" }
       );
 
       return res.status(201).json({
@@ -338,7 +338,7 @@ export class AuthController {
           tokenVersion: user.tokenVersion || 0,
         },
         AuthController.JWT_SECRET,
-        { expiresIn: "7d" }
+        { expiresIn: "30d" }
       );
 
       return res.status(200).json({
@@ -610,11 +610,16 @@ export class AuthController {
 
       const userObj = user.toObject();
 
-      // 🌟 ADMIN HAS NO SHIFT OR SHIFT TIMINGS 🌟
       if (userObj.role === "admin") {
         delete userObj.shift;
         delete userObj.shiftAndSchedule;
       }
+
+      userObj.departmentName = user.department?.departmentName || "";
+      userObj.designationName =
+        user.designation?.designationName ||
+        user.designation?.designationTitle ||
+        "";
 
       return res.status(200).json({
         success: true,
@@ -634,13 +639,17 @@ export class AuthController {
   static async logout(req, res) {
     try {
       const userId = req.user?._id;
+      const isAdmin = req.user?.role === "admin";
 
       if (userId) {
-        await UserModel.findByIdAndUpdate(userId, {
-          $inc: { tokenVersion: 1 },
+        const updateData = {
           fcmToken: null,
           lastLogoutAt: new Date(),
-        });
+        };
+        if (!isAdmin) {
+          updateData.$inc = { tokenVersion: 1 };
+        }
+        await UserModel.findByIdAndUpdate(userId, updateData);
       }
 
       return res.status(200).json({

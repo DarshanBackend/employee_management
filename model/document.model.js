@@ -2,9 +2,14 @@ import mongoose from "mongoose";
 
 export const DOCUMENT_CATEGORIES = [
   "Identity Proof",
+  "Identity",
+  "Employment",
   "Contracts",
-  "Tax & Compliance",
+  "Education",
+  "Certifications",
   "Certificates",
+  "Tax & Compliance",
+  "Other",
 ];
 
 export const VERIFICATION_STATUSES = [
@@ -22,7 +27,6 @@ const DocumentSchema = new mongoose.Schema(
     },
     documentCategory: {
       type: String,
-      enum: DOCUMENT_CATEGORIES,
       required: [true, "Document category is required"],
       default: "Identity Proof",
       trim: true,

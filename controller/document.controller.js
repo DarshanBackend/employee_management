@@ -50,13 +50,18 @@ const formatDisplayDate = (date) => {
 const getCategoryBadgeColor = (category) => {
   switch (category) {
     case "Identity Proof":
+    case "Identity":
       return "#10B981";
+    case "Employment":
     case "Contracts":
       return "#3B82F6";
-    case "Tax & Compliance":
-      return "#8B5CF6";
+    case "Education":
+      return "#6366F1";
+    case "Certifications":
     case "Certificates":
       return "#F59E0B";
+    case "Tax & Compliance":
+      return "#8B5CF6";
     default:
       return "#10B981";
   }
@@ -73,7 +78,7 @@ const getCategoryIcon = (category, title = "") => {
   if (lower.includes("pan")) {
     return "credit-card";
   }
-  if (lower.includes("aadhaar") || lower.includes("passport") || lower.includes("id")) {
+  if (lower.includes("aadhaar") || lower.includes("aadhar") || lower.includes("passport") || lower.includes("id")) {
     return "id-card";
   }
   if (lower.includes("contract") || lower.includes("offer") || lower.includes("agreement")) {
@@ -85,13 +90,18 @@ const getCategoryIcon = (category, title = "") => {
 
   switch (category) {
     case "Identity Proof":
+    case "Identity":
       return "id-card";
+    case "Employment":
     case "Contracts":
       return "file-contract";
+    case "Education":
+      return "graduation-cap";
+    case "Certifications":
+    case "Certificates":
+      return "award";
     case "Tax & Compliance":
       return "receipt";
-    case "Certificates":
-      return "graduation-cap";
     default:
       return "file-text";
   }
@@ -112,32 +122,60 @@ export class DocumentController {
       } = { ...req.query, ...req.body };
 
       const baseFilter = {};
+      if (req.user && req.user.role === "employee") {
+        baseFilter.employee = req.user._id;
+      }
 
       const [
         totalAllCount,
-        identityProofCount,
-        contractsCount,
-        taxComplianceCount,
-        certificatesCount,
+        identityCount,
+        employmentCount,
+        educationCount,
+        certificationsCount,
       ] = await Promise.all([
         DocumentModel.countDocuments(baseFilter),
-        DocumentModel.countDocuments({ ...baseFilter, documentCategory: "Identity Proof" }),
-        DocumentModel.countDocuments({ ...baseFilter, documentCategory: "Contracts" }),
-        DocumentModel.countDocuments({ ...baseFilter, documentCategory: "Tax & Compliance" }),
-        DocumentModel.countDocuments({ ...baseFilter, documentCategory: "Certificates" }),
+        DocumentModel.countDocuments({
+          ...baseFilter,
+          documentCategory: { $in: ["Identity Proof", "Identity"] },
+        }),
+        DocumentModel.countDocuments({
+          ...baseFilter,
+          documentCategory: { $in: ["Employment", "Contracts"] },
+        }),
+        DocumentModel.countDocuments({
+          ...baseFilter,
+          documentCategory: { $in: ["Education"] },
+        }),
+        DocumentModel.countDocuments({
+          ...baseFilter,
+          documentCategory: { $in: ["Certifications", "Certificates"] },
+        }),
       ]);
 
       const filter = { ...baseFilter };
 
-      if (category && category !== "All" && DOCUMENT_CATEGORIES.includes(category)) {
-        filter.documentCategory = category;
+      if (category && String(category).toLowerCase() !== "all") {
+        const catLower = String(category).trim().toLowerCase();
+        if (catLower.includes("ident")) {
+          filter.documentCategory = { $in: ["Identity Proof", "Identity"] };
+        } else if (catLower.includes("employ") || catLower.includes("contract")) {
+          filter.documentCategory = { $in: ["Employment", "Contracts"] };
+        } else if (catLower.includes("educat") || catLower.includes("degree")) {
+          filter.documentCategory = { $in: ["Education"] };
+        } else if (catLower.includes("certif")) {
+          filter.documentCategory = { $in: ["Certifications", "Certificates"] };
+        } else if (catLower.includes("tax")) {
+          filter.documentCategory = { $in: ["Tax & Compliance"] };
+        } else {
+          filter.documentCategory = category.trim();
+        }
       }
 
       if (status && status !== "All" && VERIFICATION_STATUSES.includes(status)) {
         filter.verificationStatus = status;
       }
 
-      if (employeeId && employeeId.trim()) {
+      if (employeeId && employeeId.trim() && req.user?.role !== "employee") {
         const trimmedEmp = employeeId.trim();
         if (mongoose.Types.ObjectId.isValid(trimmedEmp)) {
           filter.employee = trimmedEmp;
@@ -241,17 +279,24 @@ export class DocumentController {
         };
       });
 
-      const categoryCounts = {
-        all: totalAllCount,
-        identityProof: identityProofCount,
-        contracts: contractsCount,
-        taxAndCompliance: taxComplianceCount,
-        certificates: certificatesCount,
-      };
+      const tabs = [
+        { label: "All", key: "all", count: totalAllCount },
+        { label: "Identity", key: "identity", count: identityCount },
+        { label: "Employment", key: "employment", count: employmentCount },
+        { label: "Education", key: "education", count: educationCount },
+        { label: "Certifications", key: "certifications", count: certificationsCount },
+      ];
 
       return sendSuccessResponse(res, "Documents fetched successfully", {
         totalDocuments: totalMatched,
-        categoryCounts,
+        tabs,
+        categoryCounts: {
+          all: totalAllCount,
+          identity: identityCount,
+          employment: employmentCount,
+          education: educationCount,
+          certifications: certificationsCount,
+        },
         page: parseInt(page, 10),
         limit: parseInt(limit, 10),
         totalPages: Math.ceil(totalMatched / parseInt(limit, 10)) || 1,
@@ -261,6 +306,12 @@ export class DocumentController {
       console.error("Get All Documents Error:", error);
       return sendErrorResponse(res, 500, "Failed to retrieve documents", error);
     }
+  }
+
+  static async getMyDocuments(req, res) {
+    if (!req.query) req.query = {};
+    req.query.employeeId = String(req.user._id);
+    return DocumentController.getAllDocuments(req, res);
   }
 
   static async getDocumentById(req, res) {
@@ -352,7 +403,9 @@ export class DocumentController {
       const body = req.body || {};
       const {
         documentCategory,
+        category,
         documentTitle,
+        title,
         employee,
         employeeId,
         verificationStatus = "Pending Review",
@@ -360,34 +413,99 @@ export class DocumentController {
         fileName: directFileName,
       } = body;
 
-      if (!documentTitle || !documentTitle.trim()) {
+      const rawTitle = documentTitle || title;
+      if (!rawTitle || !rawTitle.trim()) {
         return sendBadRequestResponse(res, "Document title is required");
       }
 
-      if (!documentCategory || !DOCUMENT_CATEGORIES.includes(documentCategory.trim())) {
-        return sendBadRequestResponse(
-          res,
-          `Document category is invalid. Must be one of: ${DOCUMENT_CATEGORIES.join(", ")}`
-        );
+      const rawCategory = documentCategory || category || "Identity Proof";
+      let resolvedCategory = rawCategory.trim();
+      const lowerCat = resolvedCategory.toLowerCase();
+
+      if (
+        lowerCat.includes("ident") ||
+        lowerCat.includes("aadhar") ||
+        lowerCat.includes("aadhaar") ||
+        lowerCat.includes("pan") ||
+        lowerCat.includes("passport") ||
+        lowerCat.includes("voter") ||
+        lowerCat.includes("driving") ||
+        lowerCat.includes("license") ||
+        lowerCat.includes("id card")
+      ) {
+        resolvedCategory = "Identity Proof";
+      } else if (
+        lowerCat.includes("employ") ||
+        lowerCat.includes("contract") ||
+        lowerCat.includes("offer") ||
+        lowerCat.includes("joining") ||
+        lowerCat.includes("reliev") ||
+        lowerCat.includes("experience") ||
+        lowerCat.includes("salary") ||
+        lowerCat.includes("payslip") ||
+        lowerCat.includes("nda")
+      ) {
+        resolvedCategory = "Employment";
+      } else if (
+        lowerCat.includes("educat") ||
+        lowerCat.includes("degree") ||
+        lowerCat.includes("diploma") ||
+        lowerCat.includes("marksheet") ||
+        lowerCat.includes("graduation") ||
+        lowerCat.includes("college") ||
+        lowerCat.includes("school") ||
+        lowerCat.includes("10th") ||
+        lowerCat.includes("12th")
+      ) {
+        resolvedCategory = "Education";
+      } else if (
+        lowerCat.includes("certif") ||
+        lowerCat.includes("course") ||
+        lowerCat.includes("training") ||
+        lowerCat.includes("skill")
+      ) {
+        resolvedCategory = "Certifications";
+      } else if (
+        lowerCat.includes("tax") ||
+        lowerCat.includes("compliance") ||
+        lowerCat.includes("tds") ||
+        lowerCat.includes("form 16") ||
+        lowerCat.includes("pf") ||
+        lowerCat.includes("esic") ||
+        lowerCat.includes("gst")
+      ) {
+        resolvedCategory = "Tax & Compliance";
       }
 
-      const targetEmpIdentifier = employee || employeeId;
-      if (!targetEmpIdentifier) {
-        return sendBadRequestResponse(res, "Assign to employee is required");
+      const isEmployeeUser = req.user?.role === "employee";
+      let targetEmpIdentifier = null;
+
+      if (isEmployeeUser) {
+        targetEmpIdentifier = req.user?._id;
+      } else {
+        targetEmpIdentifier = employee || employeeId;
+        if (!targetEmpIdentifier || !String(targetEmpIdentifier).trim()) {
+          return sendBadRequestResponse(
+            res,
+            "Employee ID is required when uploaded by admin"
+          );
+        }
       }
 
       let employeeDoc = null;
-      if (mongoose.Types.ObjectId.isValid(String(targetEmpIdentifier).trim())) {
+      const empSearchId = String(targetEmpIdentifier).trim();
+      if (mongoose.Types.ObjectId.isValid(empSearchId)) {
         employeeDoc = await UserModel.findOne({
-          _id: String(targetEmpIdentifier).trim(),
+          _id: empSearchId,
           isUserDeleted: { $ne: true },
         });
       }
       if (!employeeDoc) {
         employeeDoc = await UserModel.findOne({
           $or: [
-            { employeeId: String(targetEmpIdentifier).trim() },
-            { name: new RegExp(`^${String(targetEmpIdentifier).trim()}$`, "i") },
+            { employeeId: empSearchId },
+            { name: new RegExp(`^${empSearchId}$`, "i") },
+            { email: empSearchId.toLowerCase() },
           ],
           isUserDeleted: { $ne: true },
         });
@@ -399,7 +517,7 @@ export class DocumentController {
 
       let finalFileUrl = directFileUrl || "";
       let finalFileKey = "";
-      let finalFileName = directFileName || `${documentTitle.replace(/\s+/g, "_")}.pdf`;
+      let finalFileName = directFileName || `${rawTitle.trim().replace(/\s+/g, "_")}.pdf`;
       let finalFileSize = 0;
       let finalFileType = "pdf";
       let finalMimeType = "application/pdf";
@@ -428,20 +546,26 @@ export class DocumentController {
       }
 
       if (!finalFileUrl) {
-        return sendBadRequestResponse(res, "File upload or fileUrl is required");
+        return sendBadRequestResponse(res, "Document file is required (PDF, JPG, PNG)");
       }
 
       const formattedSize = formatBytes(finalFileSize);
-      const badgeColor = getCategoryBadgeColor(documentCategory.trim());
-      const icon = getCategoryIcon(documentCategory.trim(), documentTitle.trim());
+      const badgeColor = getCategoryBadgeColor(resolvedCategory);
+      const icon = getCategoryIcon(resolvedCategory, rawTitle.trim());
 
-      const status = VERIFICATION_STATUSES.includes(verificationStatus)
-        ? verificationStatus
-        : "Pending Review";
+      let status = "Pending Review";
+      if (isEmployeeUser) {
+        status = "Pending Review";
+      } else {
+        status =
+          verificationStatus && VERIFICATION_STATUSES.includes(verificationStatus)
+            ? verificationStatus
+            : "Verified";
+      }
 
       const newDoc = await DocumentModel.create({
-        documentTitle: documentTitle.trim(),
-        documentCategory: documentCategory.trim(),
+        documentTitle: rawTitle.trim(),
+        documentCategory: resolvedCategory,
         employee: employeeDoc._id,
         fileName: finalFileName,
         fileUrl: finalFileUrl,
@@ -458,15 +582,15 @@ export class DocumentController {
         uploadedBy: req.user?._id || null,
       });
 
-      const empName = employeeDoc.name || `${employeeDoc.firstName} ${employeeDoc.lastName}`.trim();
+      const empName = employeeDoc.name || `${employeeDoc.firstName || ""} ${employeeDoc.lastName || ""}`.trim();
       await recordAuditLog(req, {
         action: "Uploaded Employee Document",
         category: "Employees",
-        description: `Uploaded ${documentTitle.trim()} for ${empName} (${employeeDoc.employeeId || "EMP"})`,
-        targetResource: `${documentTitle.trim()} - ${empName}`,
+        description: `Uploaded ${resolvedCategory} document '${rawTitle.trim()}' for ${empName} (${employeeDoc.employeeId || "EMP"})`,
+        targetResource: `${rawTitle.trim()} - ${empName}`,
         diff: {
           before: "None",
-          after: `Category: ${documentCategory.trim()} | Status: ${status}`,
+          after: `Category: ${resolvedCategory} | Status: ${status}`,
         },
       });
 
@@ -644,6 +768,19 @@ export class DocumentController {
       const doc = await DocumentModel.findById(id).populate("employee", "name firstName lastName employeeId");
       if (!doc) {
         return sendNotFoundResponse(res, "Document not found");
+      }
+
+      const isOwner =
+        req.user?._id &&
+        String(doc.employee?._id || doc.employee) === String(req.user._id);
+      const isAdmin = req.user?.role === "admin";
+
+      if (!isOwner && !isAdmin) {
+        return sendErrorResponse(
+          res,
+          403,
+          "You are not authorized to delete this document"
+        );
       }
 
       if (doc.fileUrl && doc.fileUrl.startsWith("/public/")) {
