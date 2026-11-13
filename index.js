@@ -36,8 +36,7 @@ app.use(logger("dev"));
 app.use("/public", express.static("public"));
 
 const DB_URL =
-  process.env.DB_URL ||
-  "mongodb+srv://mehulkalathiyainfotech:euMEtsN4B8ZfmXCk@cluster0.lhctupx.mongodb.net/language_learning";
+  process.env.DB_URL;
 connectDB(DB_URL);
 
 app.get("/", async (req, res) => {
