@@ -13,6 +13,7 @@ import {
   sendErrorResponse,
 } from "../utils/Response.utils.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
+import { notifyAdmins } from "../utils/notification.util.js";
 
 const formatDDMMYYYY = (input) => {
   if (!input) return "";
@@ -451,6 +452,25 @@ export class RequestHubController {
         approvedBy: !isEmployeeUser ? req.user?._id : null,
         approvedAt: !isEmployeeUser ? new Date() : null,
       });
+
+      if (isEmployeeUser) {
+        const empName =
+          req.user?.name ||
+          `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
+          "Employee";
+
+        await notifyAdmins({
+          title: "New Expense Claim",
+          message: `${empName} submitted an expense claim of ₹${Number(amount || 0).toLocaleString("en-IN")} for '${title.trim()}'.`,
+          category: "Payroll",
+          type: "EXPENSE_CLAIM_SUBMITTED",
+          sender: targetEmpId,
+          senderName: empName,
+          senderAvatar: req.user?.avatarUrl || null,
+          referenceId: newExpense._id,
+          referenceModel: "Expense",
+        }).catch(() => {});
+      }
 
       return sendCreatedResponse(res, "Expense request submitted successfully", newExpense);
     } catch (error) {

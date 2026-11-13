@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import ProfileUpdateRequestModel from "../model/profileUpdateRequest.model.js";
 import UserModel from "../model/user.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
+import { notifyAdmins, notifyUser } from "../utils/notification.util.js";
 import {
   sendSuccessResponse,
   sendBadRequestResponse,
@@ -90,6 +91,18 @@ export class ProfileUpdateRequestController {
         description: `${employee.name || "Employee"} requested update for '${normalizedField}'`,
         targetResource: `Employee: ${employee.name || employee.employeeId}`,
       });
+
+      await notifyAdmins({
+        title: "Profile Update Request",
+        message: `${employee.name || "Employee"} requested update for '${normalizedField}' to '${proposedValue.trim()}'.`,
+        category: "System",
+        type: "PROFILE_UPDATE_REQUESTED",
+        sender: employeeId,
+        senderName: employee.name || "Employee",
+        senderAvatar: employee.avatarUrl || null,
+        referenceId: newRequest._id,
+        referenceModel: "ProfileUpdateRequest",
+      }).catch(() => {});
 
       const responseObj = newRequest.toObject();
       responseObj.formattedDate = formatDDMMYYYY(newRequest.createdAt);
@@ -439,6 +452,16 @@ export class ProfileUpdateRequestController {
         description: `${isApprove ? "Approved" : "Rejected"} update for '${request.fieldToUpdate}' of ${request.employee?.name || "Employee"}`,
         targetResource: `${request.employee?.name || "Employee"} - ${request.fieldToUpdate}`,
       });
+
+      await notifyUser(request.employee?._id || request.employee, {
+        title: `Profile Update Request ${isApprove ? "Approved" : "Rejected"}`,
+        message: `Your profile update request for '${request.fieldToUpdate}' has been ${isApprove ? "approved" : "rejected"} by Admin.${!isApprove && adminRemarks ? ` Reason: ${adminRemarks}` : ""}`,
+        category: "System",
+        type: isApprove ? "PROFILE_UPDATE_APPROVED" : "PROFILE_UPDATE_REJECTED",
+        sender: req.user?._id,
+        referenceId: request._id,
+        referenceModel: "ProfileUpdateRequest",
+      }).catch(() => {});
 
       return sendSuccessResponse(
         res,

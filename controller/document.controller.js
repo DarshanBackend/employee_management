@@ -13,6 +13,7 @@ import {
   sendNotFoundResponse,
 } from "../utils/Response.utils.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
+import { notifyAdmins, notifyUser } from "../utils/notification.util.js";
 import path from "path";
 import fs from "fs";
 
@@ -594,6 +595,20 @@ export class DocumentController {
         },
       });
 
+      if (isEmployeeUser) {
+        await notifyAdmins({
+          title: "New Document Uploaded",
+          message: `${empName} uploaded a document for review: '${rawTitle.trim()}' (${resolvedCategory}).`,
+          category: "System",
+          type: "DOCUMENT_UPLOADED",
+          sender: employeeDoc._id,
+          senderName: empName,
+          senderAvatar: employeeDoc.avatarUrl || null,
+          referenceId: newDoc._id,
+          referenceModel: "Document",
+        }).catch(() => {});
+      }
+
       return sendCreatedResponse(
         res,
         "Employee document uploaded and saved successfully",
@@ -750,6 +765,16 @@ export class DocumentController {
           after: `Status: ${verificationStatus}`,
         },
       });
+
+      await notifyUser(doc.employee?._id || doc.employee, {
+        title: `Document ${verificationStatus}`,
+        message: `Your document '${doc.documentTitle}' status has been updated to '${verificationStatus}'.${rejectionReason ? ` Reason: ${rejectionReason}` : ""}`,
+        category: "System",
+        type: verificationStatus === "Verified" ? "DOCUMENT_VERIFIED" : "DOCUMENT_REJECTED",
+        sender: req.user?._id,
+        referenceId: doc._id,
+        referenceModel: "Document",
+      }).catch(() => {});
 
       return sendSuccessResponse(res, `Document status updated to ${verificationStatus}`, doc);
     } catch (error) {

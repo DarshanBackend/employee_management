@@ -7,6 +7,7 @@ import ProfileUpdateRequestModel from "../model/profileUpdateRequest.model.js";
 import PayrollRunModel from "../model/payrollRun.model.js";
 import UserModel from "../model/user.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
+import { notifyUser } from "../utils/notification.util.js";
 import {
   sendSuccessResponse,
   sendBadRequestResponse,
@@ -532,6 +533,16 @@ export class PendingActionController {
           targetResource: `${leave.employee?.name || "Employee"} - ${leave.leaveTypeName}`,
         });
 
+        await notifyUser(leave.employee?._id || leave.employee, {
+          title: `Leave Application ${isApprove ? "Approved" : "Rejected"}`,
+          message: `Your ${leave.leaveTypeName || "leave"} application has been ${isApprove ? "approved" : "rejected"} by Admin.${!isApprove && adminRemarks ? ` Reason: ${adminRemarks}` : ""}`,
+          category: "Leave",
+          type: isApprove ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
+          sender: req.user?._id,
+          referenceId: leave._id,
+          referenceModel: "Leave",
+        }).catch(() => {});
+
         return sendSuccessResponse(
           res,
           `Leave request ${leave.status.toLowerCase()} successfully!`,
@@ -600,6 +611,16 @@ export class PendingActionController {
           description: `${isApprove ? "Approved" : "Rejected"} ${request.correctionType} on ${request.date} for ${request.employee?.name || "Employee"}`,
           targetResource: `${request.employee?.name || "Employee"} - ${request.correctionType}`,
         });
+
+        await notifyUser(request.employee?._id || request.employee, {
+          title: `Regularization ${isApprove ? "Approved" : "Rejected"}`,
+          message: `Your regularization request for ${request.correctionType} on ${request.date} was ${isApprove ? "approved" : "rejected"} by Admin.${!isApprove && adminRemarks ? ` Reason: ${adminRemarks}` : ""}`,
+          category: "Attendance",
+          type: isApprove ? "REGULARIZATION_APPROVED" : "REGULARIZATION_REJECTED",
+          sender: req.user?._id,
+          referenceId: request._id,
+          referenceModel: "AttendanceRegularization",
+        }).catch(() => {});
 
         return sendSuccessResponse(
           res,
@@ -673,6 +694,16 @@ export class PendingActionController {
             targetResource: `${profileUpdateReq.employee?.name || "Employee"} - ${profileUpdateReq.fieldToUpdate}`,
           });
 
+          await notifyUser(profileUpdateReq.employee?._id || profileUpdateReq.employee, {
+            title: `Profile Update Request ${isApprove ? "Approved" : "Rejected"}`,
+            message: `Your profile update request for '${profileUpdateReq.fieldToUpdate}' has been ${isApprove ? "approved" : "rejected"} by Admin.${!isApprove && adminRemarks ? ` Reason: ${adminRemarks}` : ""}`,
+            category: "System",
+            type: isApprove ? "PROFILE_UPDATE_APPROVED" : "PROFILE_UPDATE_REJECTED",
+            sender: req.user?._id,
+            referenceId: profileUpdateReq._id,
+            referenceModel: "ProfileUpdateRequest",
+          }).catch(() => {});
+
           return sendSuccessResponse(
             res,
             `Profile update request ${profileUpdateReq.status.toLowerCase()} successfully!`,
@@ -702,6 +733,16 @@ export class PendingActionController {
           description: `${isApprove ? "Verified" : "Rejected"} '${doc.documentTitle}' for ${doc.employee?.name || "Employee"}`,
           targetResource: doc.documentTitle,
         });
+
+        await notifyUser(doc.employee?._id || doc.employee, {
+          title: `Document ${isApprove ? "Verified" : "Rejected"}`,
+          message: `Your document '${doc.documentTitle}' was ${isApprove ? "verified" : "rejected"} by Admin.${!isApprove && adminRemarks ? ` Reason: ${adminRemarks}` : ""}`,
+          category: "System",
+          type: isApprove ? "DOCUMENT_VERIFIED" : "DOCUMENT_REJECTED",
+          sender: req.user?._id,
+          referenceId: doc._id,
+          referenceModel: "Document",
+        }).catch(() => {});
 
         return sendSuccessResponse(
           res,
@@ -760,6 +801,16 @@ export class PendingActionController {
           lv.actionAt = new Date();
           await lv.save();
           approvedLeaves++;
+
+          notifyUser(lv.employee, {
+            title: "Leave Application Approved",
+            message: `Your ${lv.leaveTypeName || "leave"} application has been approved by Admin.`,
+            category: "Leave",
+            type: "LEAVE_APPROVED",
+            sender: req.user?._id,
+            referenceId: lv._id,
+            referenceModel: "Leave",
+          }).catch(() => {});
         }
       }
 
@@ -772,6 +823,16 @@ export class PendingActionController {
           att.actionAt = new Date();
           await att.save();
           approvedAttendance++;
+
+          notifyUser(att.employee, {
+            title: "Attendance Regularization Approved",
+            message: `Your regularization request for ${att.correctionType} on ${att.date} was approved by Admin.`,
+            category: "Attendance",
+            type: "REGULARIZATION_APPROVED",
+            sender: req.user?._id,
+            referenceId: att._id,
+            referenceModel: "AttendanceRegularization",
+          }).catch(() => {});
         }
       }
 
@@ -813,6 +874,16 @@ export class PendingActionController {
           pu.actionAt = new Date();
           await pu.save();
           approvedProfileUpdates++;
+
+          notifyUser(pu.employee, {
+            title: "Profile Update Request Approved",
+            message: `Your profile update request for '${pu.fieldToUpdate}' has been approved by Admin.`,
+            category: "System",
+            type: "PROFILE_UPDATE_APPROVED",
+            sender: req.user?._id,
+            referenceId: pu._id,
+            referenceModel: "ProfileUpdateRequest",
+          }).catch(() => {});
         }
 
         const pendingDocs = await DocumentModel.find({ verificationStatus: "Pending Review" });
@@ -822,6 +893,16 @@ export class PendingActionController {
           doc.verifiedAt = new Date();
           await doc.save();
           approvedDocuments++;
+
+          notifyUser(doc.employee, {
+            title: "Document Verified",
+            message: `Your document '${doc.documentTitle}' was verified by Admin.`,
+            category: "System",
+            type: "DOCUMENT_VERIFIED",
+            sender: req.user?._id,
+            referenceId: doc._id,
+            referenceModel: "Document",
+          }).catch(() => {});
         }
       }
 

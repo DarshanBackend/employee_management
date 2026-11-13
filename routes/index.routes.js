@@ -23,6 +23,7 @@ import { HomeController } from "../controller/home.controller.js";
 import { ProfileUpdateRequestController } from "../controller/profileUpdateRequest.controller.js";
 import { RequestHubController } from "../controller/requestHub.controller.js";
 import { AnnouncementController } from "../controller/announcement.controller.js";
+import { NotificationController } from "../controller/notification.controller.js";
 import {
   getProfile,
   updateProfile,
@@ -252,6 +253,13 @@ indexRouter.get("/getAnnouncementById", UserAuth, AnnouncementController.getAnno
 indexRouter.get("/getAnnouncementById/:id", UserAuth, AnnouncementController.getAnnouncementById);
 indexRouter.patch("/updateAnnouncement/:id", UserAuth, adminAuth, AnnouncementController.updateAnnouncement);
 indexRouter.delete("/deleteAnnouncement/:id", UserAuth, adminAuth, AnnouncementController.deleteAnnouncement);
+
+indexRouter.get("/getNotifications", UserAuth, NotificationController.getNotifications);
+indexRouter.get("/getNotificationCounts", UserAuth, NotificationController.getNotificationCounts);
+indexRouter.patch("/markAllAsRead", UserAuth, NotificationController.markAllAsRead);
+indexRouter.patch("/markAsRead/:id", UserAuth, NotificationController.markAsRead);
+indexRouter.delete("/clearAllNotification", UserAuth, NotificationController.clearAllNotification);
+indexRouter.delete("/deleteNotification/:id", UserAuth, NotificationController.deleteNotification);
 
 indexRouter.patch("/user/updateSettings", UserAuth, updateSettings);
 indexRouter.get("/user/getSettings", UserAuth, getSettings);

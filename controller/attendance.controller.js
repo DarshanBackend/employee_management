@@ -6,6 +6,7 @@ import ShiftModel from "../model/shift.model.js";
 import ShiftRosterModel from "../model/shiftRoster.model.js";
 import UserModel from "../model/user.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
+import { notifyAdmins, notifyUser } from "../utils/notification.util.js";
 import {
   sendCreatedResponse,
   sendSuccessResponse,
@@ -177,6 +178,59 @@ export const checkIsLate = (shiftStartTime, checkTime = new Date()) => {
     if (curM < 720) return true;
     return curM > startM;
   }
+};
+
+export const buildActivityTimeline = (attendance) => {
+  const timeline = [];
+  if (!attendance) return timeline;
+
+  if (attendance.checkInTime) {
+    timeline.push({
+      id: "punch-checkin",
+      type: "check_in",
+      title: "Clock In (Arrival)",
+      time: attendance.checkInDisplay || formatTimeDisplay(attendance.checkInTime),
+      timestamp: attendance.checkInTime,
+      isRegularized: Boolean(attendance.isCheckInRegularized),
+    });
+  }
+
+  if (Array.isArray(attendance.breaks)) {
+    attendance.breaks.forEach((b, idx) => {
+      if (b.startTime) {
+        timeline.push({
+          id: `break-start-${idx}`,
+          type: "break_start",
+          title: `${b.type || "Break"} Out`,
+          time: b.startTimeDisplay || formatTimeDisplay(b.startTime),
+          timestamp: b.startTime,
+        });
+      }
+      if (b.endTime) {
+        timeline.push({
+          id: `break-end-${idx}`,
+          type: "break_end",
+          title: `${b.type || "Break"} In`,
+          time: b.endTimeDisplay || formatTimeDisplay(b.endTime),
+          timestamp: b.endTime,
+        });
+      }
+    });
+  }
+
+  if (attendance.checkOutTime) {
+    timeline.push({
+      id: "punch-checkout",
+      type: "check_out",
+      title: "Clock Out (Departure)",
+      time: attendance.checkOutDisplay || formatTimeDisplay(attendance.checkOutTime),
+      timestamp: attendance.checkOutTime,
+      isRegularized: Boolean(attendance.isCheckOutRegularized),
+    });
+  }
+
+  timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  return timeline;
 };
 
 export class AttendanceController {
@@ -414,6 +468,24 @@ export class AttendanceController {
       }
 
       await attendance.save();
+
+      if (!isAdmin && isLate) {
+        const empName =
+          req.user?.name ||
+          `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
+          "Employee";
+        await notifyAdmins({
+          title: "Late Arrival Alert",
+          message: `${empName} checked in late today at ${checkInDisplay} (Shift: ${shiftStartTime} - ${shiftEndTime}).`,
+          category: "Attendance",
+          type: "LATE_CHECK_IN",
+          sender: employeeId,
+          senderName: empName,
+          senderAvatar: req.user?.avatarUrl || null,
+          referenceId: attendance._id,
+          referenceModel: "Attendance",
+        }).catch(() => {});
+      }
 
       return sendSuccessResponse(res, `Check-in successful at ${checkInDisplay}`, {
         ...attendance.toObject(),
@@ -748,6 +820,8 @@ export class AttendanceController {
           elapsedMinutes = Math.max(0, Math.floor((now.getTime() - checkInDate.getTime()) / (1000 * 60)));
         }
 
+        const timeline = buildActivityTimeline(attendance);
+
         return sendSuccessResponse(res, "Today's attendance status retrieved", {
           date: todayDate,
           formattedDate: formattedToday,
@@ -781,6 +855,28 @@ export class AttendanceController {
           isPendingLeave: false,
           pendingLeaveRequest: null,
           assignedShift: null,
+          shiftCard: {
+            shiftName: "Flexible Admin Shift",
+            shiftTiming: "Flexible Hours",
+            location: "Company Office",
+          },
+          punchCard: {
+            status: hasCheckedOut ? "Checked Out" : hasCheckedIn ? "Checked In" : "Not Yet Checked In",
+            subtitle: hasCheckedOut
+              ? `Recorded departure at ${attendance?.checkOutDisplay || ""}`
+              : hasCheckedIn
+              ? `Checked in at ${attendance?.checkInDisplay || ""}`
+              : "Tap below to record your arrival.",
+            buttonText: hasCheckedOut
+              ? "Shift Completed"
+              : hasCheckedIn
+              ? "Clock Out (Check-Out)"
+              : "Clock In (Check-In)",
+            buttonAction: hasCheckedOut ? "NONE" : hasCheckedIn ? "CLOCK_OUT" : "CLOCK_IN",
+            isEnabled: !hasCheckedOut,
+          },
+          activityTimeline: timeline,
+          timelineEmptyMessage: "No punches recorded yet today.",
         });
       }
 
@@ -943,6 +1039,8 @@ export class AttendanceController {
           ? `+${attendance.totalBreakLateMinutes} mins added to shift end due to late break resume`
           : "No penalty";
 
+      const timeline = buildActivityTimeline(attendance);
+
       return sendSuccessResponse(res, "Today's attendance status retrieved", {
         date: todayDate,
         formattedDate: formattedToday,
@@ -969,7 +1067,6 @@ export class AttendanceController {
         isEarlyOutApproved,
         approvedEarlyOutTime: attendance?.approvedEarlyOutTime || approvedEarlyOut?.requestedTimestamp || null,
         canCheckOut,
-        // Tracker & Break Automation Fields
         trackerStatus: attendance?.trackerStatus || (hasCheckedOut ? "COMPLETED" : hasCheckedIn ? "RUNNING" : "NOT_STARTED"),
         activeBreak: attendance?.activeBreak || null,
         breaks: attendance?.breaks || [],
@@ -999,6 +1096,28 @@ export class AttendanceController {
             teaBreaks: targetShift.teaBreaks,
           }
           : null,
+        shiftCard: {
+          shiftName: targetShift?.shiftName || "Standard Work Shift",
+          shiftTiming: `${shiftStartTime} - ${shiftEndTime}`,
+          location: "Company Office",
+        },
+        punchCard: {
+          status: hasCheckedOut ? "Checked Out" : hasCheckedIn ? "Checked In" : "Not Yet Checked In",
+          subtitle: hasCheckedOut
+            ? `Recorded departure at ${attendance?.checkOutDisplay || ""}`
+            : hasCheckedIn
+            ? `Checked in at ${attendance?.checkInDisplay || ""}`
+            : "Tap below to record your arrival.",
+          buttonText: hasCheckedOut
+            ? "Shift Completed"
+            : hasCheckedIn
+            ? "Clock Out (Check-Out)"
+            : "Clock In (Check-In)",
+          buttonAction: hasCheckedOut ? "NONE" : hasCheckedIn ? "CLOCK_OUT" : "CLOCK_IN",
+          isEnabled: hasCheckedOut ? false : hasCheckedIn ? canCheckOut : canCheckIn,
+        },
+        activityTimeline: timeline,
+        timelineEmptyMessage: "No punches recorded yet today.",
       });
     } catch (error) {
       console.error("Get Today Status Error:", error);
@@ -1132,6 +1251,23 @@ export class AttendanceController {
         category: "Attendance & Regularization",
         description: `Submitted ${correctionType.trim()} request for ${displayDate} (${requestedTimestamp.trim()})`,
         targetResource: `${displayDate} - ${correctionType.trim()}`,
+      });
+
+      const regEmpName =
+        req.user?.name ||
+        `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
+        "Employee";
+
+      await notifyAdmins({
+        title: "Attendance Regularization Request",
+        message: `${regEmpName} requested regularization for ${correctionType.trim()} on ${displayDate}.`,
+        category: "Attendance",
+        type: "REGULARIZATION_APPLIED",
+        sender: finalEmployeeId,
+        senderName: regEmpName,
+        senderAvatar: req.user?.avatarUrl || null,
+        referenceId: newRequest._id,
+        referenceModel: "AttendanceRegularization",
       });
 
       return sendCreatedResponse(res, "Regularization request submitted successfully!", populated);
@@ -1414,6 +1550,23 @@ export class AttendanceController {
         description: `${isApprove ? "Approved" : "Rejected"} ${request.correctionType} for ${request.employee?.name || "Employee"
           } on ${request.formattedDate}`,
         targetResource: `${request.employee?.name} - ${request.formattedDate}`,
+      });
+
+      const regAdminName =
+        req.user?.name ||
+        `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
+        "Admin";
+
+      await notifyUser(request.employee?._id || request.employee, {
+        title: `Regularization ${isApprove ? "Approved" : "Rejected"}`,
+        message: `Your regularization request for ${request.correctionType} on ${request.formattedDate} was ${isApprove ? "approved" : "rejected"} by ${regAdminName}.${!isApprove && request.rejectionReason ? ` Reason: ${request.rejectionReason}` : ""}`,
+        category: "Attendance",
+        type: isApprove ? "REGULARIZATION_APPROVED" : "REGULARIZATION_REJECTED",
+        sender: req.user?._id,
+        senderName: regAdminName,
+        senderAvatar: req.user?.avatarUrl || null,
+        referenceId: request._id,
+        referenceModel: "AttendanceRegularization",
       });
 
       return sendSuccessResponse(

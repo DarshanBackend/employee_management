@@ -6,6 +6,7 @@ import AnnouncementModel, {
 } from "../model/announcement.model.js";
 import DepartmentModel from "../model/department.model.js";
 import UserModel from "../model/user.model.js";
+import { notifyUsers, notifyUser } from "../utils/notification.util.js";
 import {
   sendSuccessResponse,
   sendCreatedResponse,
@@ -333,6 +334,36 @@ export class AnnouncementController {
           after: `Title: ${newAnnouncement.title} | Target: ${newAnnouncement.targetType} | Recipient: ${newAnnouncement.recipient}`,
         },
       });
+
+      if (resolution.resolvedTargetType === "All Employees") {
+        UserModel.find({ role: "employee", isUserDeleted: { $ne: true } })
+          .select("_id")
+          .lean()
+          .then((allEmps) => {
+            notifyUsers(allEmps.map((e) => e._id), {
+              title: `Company Announcement: ${newAnnouncement.title}`,
+              message: newAnnouncement.description.slice(0, 120),
+              category: "System",
+              type: "ANNOUNCEMENT_PUBLISHED",
+              sender: req.user?._id,
+              senderName: publisherName,
+              referenceId: newAnnouncement._id,
+              referenceModel: "Announcement",
+            });
+          })
+          .catch(() => {});
+      } else if (resolution.targetEmployeeIds && resolution.targetEmployeeIds.length > 0) {
+        notifyUsers(resolution.targetEmployeeIds, {
+          title: `Company Announcement: ${newAnnouncement.title}`,
+          message: newAnnouncement.description.slice(0, 120),
+          category: "System",
+          type: "ANNOUNCEMENT_PUBLISHED",
+          sender: req.user?._id,
+          senderName: publisherName,
+          referenceId: newAnnouncement._id,
+          referenceModel: "Announcement",
+        }).catch(() => {});
+      }
 
       return sendCreatedResponse(
         res,

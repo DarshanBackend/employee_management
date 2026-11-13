@@ -233,7 +233,7 @@ export class EmployeeController {
         }
       }
 
-      const rawPassword = password || "Employee@123";
+      const rawPassword = password || empId || "Employee@123";
       const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
       // Resolve Shift from ShiftModel (by ID from shift, shiftId, shiftAndSchedule, or shiftTiming name)
@@ -795,7 +795,7 @@ export class EmployeeController {
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(404).json({
           success: false,
-          message: "Invalid employee ID",
+          message: "Employee not found",
         });
       }
 
@@ -1338,6 +1338,11 @@ export class EmployeeController {
   static async deleteEmployee(req, res) {
     try {
       const { id } = req.params;
+
+      if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(404).json({ success: false, message: "Employee not found" });
+      }
+
       const employee = await UserModel.findById(id);
 
       if (!employee || employee.role !== "employee") {
@@ -1345,7 +1350,7 @@ export class EmployeeController {
       }
 
       if (employee.avatarUrl) {
-        await deleteFileFromS3(employee.avatarUrl);
+        await deleteFileFromS3(employee.avatarUrl).catch(() => {});
       }
       if (employee.documents) {
         const docFields = [
@@ -1358,33 +1363,26 @@ export class EmployeeController {
         ];
         for (const field of docFields) {
           if (employee.documents[field]) {
-            await deleteFileFromS3(employee.documents[field]);
+            await deleteFileFromS3(employee.documents[field]).catch(() => {});
           }
         }
         if (Array.isArray(employee.documents.otherDocuments)) {
           for (const doc of employee.documents.otherDocuments) {
             if (doc?.url) {
-              await deleteFileFromS3(doc.url);
+              await deleteFileFromS3(doc.url).catch(() => {});
             }
           }
         }
       }
 
-      const oldStatus = employee.employeeStatus || "Active";
-      employee.isUserDeleted = true;
-      employee.employeeStatus = "Terminated";
-      await employee.save({ validateBeforeSave: false });
-
       await recordAuditLog(req, {
-        action: "Employee Terminated",
+        action: "Employee Deleted",
         category: "Employees",
-        description: `Terminated employee profile for ${employee.name || employee.firstName || "Employee"} (${employee.employeeId || ""})`,
+        description: `Deleted employee profile for ${employee.name || employee.firstName || "Employee"} (${employee.employeeId || ""})`,
         targetResource: `${employee.name || employee.firstName || "Employee"} (${employee.employeeId || ""})`,
-        diff: {
-          before: `Employee Status: ${oldStatus}`,
-          after: "Employee Status: Terminated",
-        },
       });
+
+      await UserModel.findByIdAndDelete(id);
 
       return res.status(200).json({
         success: true,

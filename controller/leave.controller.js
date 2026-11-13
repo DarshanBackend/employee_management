@@ -5,6 +5,7 @@ import LeavePolicyModel from "../model/leavePolicy.model.js";
 import AttendanceModel from "../model/attendance.model.js";
 import UserModel from "../model/user.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
+import { notifyAdmins, notifyUser } from "../utils/notification.util.js";
 import {
   getNormalizedDateString,
   formatDisplayDate,
@@ -380,6 +381,24 @@ export class LeaveController {
         targetResource: `${formattedFromDate} to ${formattedToDate} - ${leaveTypeDoc.leaveTypeName}`,
       });
 
+      const empName =
+        req.user?.name ||
+        `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
+        req.user?.employeeId ||
+        "Employee";
+
+      await notifyAdmins({
+        title: "New Leave Application",
+        message: `${empName} applied for ${totalDays} day(s) ${leaveTypeDoc.leaveTypeName} (${formattedFromDate} to ${formattedToDate}).`,
+        category: "Leave",
+        type: "LEAVE_APPLIED",
+        sender: employeeId,
+        senderName: empName,
+        senderAvatar: req.user?.avatarUrl || null,
+        referenceId: newLeave._id,
+        referenceModel: "Leave",
+      });
+
       const populated = await LeaveModel.findById(newLeave._id)
         .populate("employee", "name firstName lastName employeeId avatarUrl email department designation")
         .populate("leaveType", "leaveTypeName leaveBalance color icon");
@@ -615,6 +634,22 @@ export class LeaveController {
         targetResource: `${leave.formattedFromDate} - ${leave.leaveTypeName}`,
       });
 
+      const cancelEmpName =
+        req.user?.name ||
+        `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
+        "Employee";
+
+      await notifyAdmins({
+        title: "Leave Application Cancelled",
+        message: `${cancelEmpName} cancelled their ${leave.leaveTypeName} application (${leave.formattedFromDate} to ${leave.formattedToDate}).`,
+        category: "Leave",
+        type: "LEAVE_CANCELLED",
+        sender: employeeId,
+        senderName: cancelEmpName,
+        referenceId: leave._id,
+        referenceModel: "Leave",
+      });
+
       return sendSuccessResponse(res, "Leave application cancelled successfully", leave);
     } catch (error) {
       console.error("Cancel Leave Error:", error);
@@ -799,6 +834,23 @@ export class LeaveController {
         category: "Leave Management",
         description: `${isApprove ? "Approved" : "Rejected"} ${leave.leaveTypeName} for ${leave.employee?.name || "Employee"} (${leave.formattedFromDate} to ${leave.formattedToDate})`,
         targetResource: `${leave.employee?.name} - ${leave.leaveTypeName}`,
+      });
+
+      const adminActionName =
+        req.user?.name ||
+        `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
+        "Admin";
+
+      await notifyUser(leave.employee?._id || leave.employee, {
+        title: `Leave Application ${isApprove ? "Approved" : "Rejected"}`,
+        message: `Your ${leave.leaveTypeName} application (${leave.formattedFromDate} to ${leave.formattedToDate}) has been ${isApprove ? "approved" : "rejected"} by ${adminActionName}.${!isApprove && leave.rejectionReason ? ` Reason: ${leave.rejectionReason}` : ""}`,
+        category: "Leave",
+        type: isApprove ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
+        sender: req.user?._id,
+        senderName: adminActionName,
+        senderAvatar: req.user?.avatarUrl || null,
+        referenceId: leave._id,
+        referenceModel: "Leave",
       });
 
       return sendSuccessResponse(

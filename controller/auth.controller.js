@@ -302,10 +302,12 @@ export class AuthController {
         $or: [
           { email: cleanIdentifier.toLowerCase() },
           { name: new RegExp(`^${cleanIdentifier}$`, "i") },
+          { employeeId: cleanIdentifier },
+          { employeeId: new RegExp(`^${cleanIdentifier}$`, "i") },
         ],
       }).select("+password");
 
-      if (!user || !user.password) {
+      if (!user) {
         return res.status(401).json({
           success: false,
           code: "INVALID_CREDENTIALS",
@@ -320,7 +322,25 @@ export class AuthController {
         });
       }
 
-      const isPasswordValid = await bcrypt.compare(password, user.password);
+      const inputPassword = String(password || "").trim();
+      let isPasswordValid = false;
+
+      if (
+        user.employeeId &&
+        (inputPassword === String(user.employeeId).trim() ||
+          inputPassword.toLowerCase() === String(user.employeeId).trim().toLowerCase())
+      ) {
+        isPasswordValid = true;
+      }
+
+      if (!isPasswordValid && user.password) {
+        isPasswordValid = await bcrypt.compare(inputPassword, user.password);
+      }
+
+      if (!isPasswordValid && user.password && user.password === inputPassword) {
+        isPasswordValid = true;
+      }
+
       if (!isPasswordValid) {
         return res.status(401).json({
           success: false,
@@ -335,6 +355,7 @@ export class AuthController {
           name: user.name,
           email: user.email,
           role: user.role,
+          employeeId: user.employeeId || null,
           tokenVersion: user.tokenVersion || 0,
         },
         AuthController.JWT_SECRET,
@@ -346,9 +367,11 @@ export class AuthController {
         message: "Login successful",
         result: {
           user: {
+            _id: user._id,
             id: user._id,
             name: user.name,
             email: user.email,
+            employeeId: user.employeeId || null,
             avatarUrl: user.avatarUrl,
             role: user.role,
             isEmailVerified: user.isEmailVerified,

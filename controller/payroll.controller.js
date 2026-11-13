@@ -11,6 +11,7 @@ import DesignationModel from "../model/designation.model.js";
 import AttendanceModel from "../model/attendance.model.js";
 import PayrollRunModel from "../model/payrollRun.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
+import { notifyUser, notifyAdmins } from "../utils/notification.util.js";
 import {
   sendSuccessResponse,
   sendErrorResponse,
@@ -1014,6 +1015,28 @@ export class PayrollController {
         },
       });
 
+      for (const p of payslips) {
+        notifyUser(p.employee, {
+          title: "Monthly Salary Processed",
+          message: `Your salary for ${cycleName} has been processed. Net Pay: ₹${Number(p.netPay).toLocaleString("en-IN")}.`,
+          category: "Payroll",
+          type: "PAYSLIP_GENERATED",
+          sender: req.user?._id,
+          referenceId: payrollRunDoc._id,
+          referenceModel: "PayrollRun",
+        }).catch(() => {});
+      }
+
+      await notifyAdmins({
+        title: "Monthly Payroll Completed",
+        message: `Payroll run for ${cycleName} was executed. Total net payout: ₹${Number(netDisbursement || 0).toLocaleString("en-IN")} across ${payslips.length} employees.`,
+        category: "Payroll",
+        type: "PAYROLL_RUN_COMPLETED",
+        sender: req.user?._id,
+        referenceId: payrollRunDoc._id,
+        referenceModel: "PayrollRun",
+      }).catch(() => {});
+
       return sendSuccessResponse(
         res,
         `Payroll for ${cycleName} generated successfully. ${payslips.length} payslips created.`,
@@ -1112,6 +1135,16 @@ export class PayrollController {
         payoutDate: computed.payoutDate,
         generatedAt: new Date(),
       };
+
+      notifyUser(employee._id, {
+        title: "Payslip Generated",
+        message: `Your payslip for ${cycleName} has been generated. Net Pay: ₹${computed.netPay.toLocaleString("en-IN")}.`,
+        category: "Payroll",
+        type: "PAYSLIP_GENERATED",
+        sender: req.user?._id,
+        referenceId: employee._id,
+        referenceModel: "User",
+      }).catch(() => {});
 
       return sendSuccessResponse(res, "Payslip generated successfully", payslipData);
     } catch (error) {
