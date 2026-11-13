@@ -138,7 +138,7 @@ const HolidaySchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["Active", "Inactive"],
+      enum: ["Active", "Inactive", "Expired"],
       default: "Active",
     },
     isDeleted: {

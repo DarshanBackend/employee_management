@@ -258,6 +258,15 @@ const formatHolidayItem = (h) => {
   const startDateString = h.startDateString || h.dateString || "";
   const endDateString = h.endDateString || startDateString || "";
 
+  const todayString = getTodayDateString();
+  let status = h.status || "Active";
+  if (status !== "Inactive") {
+    const effectiveEnd = endDateString || startDateString || h.dateString || "";
+    if (effectiveEnd && effectiveEnd < todayString) {
+      status = "Expired";
+    }
+  }
+
   return {
     _id: h._id,
     holidayName: h.holidayName,
@@ -279,11 +288,41 @@ const formatHolidayItem = (h) => {
     color: h.color || classification.color,
     classification,
     description: h.description || "",
-    status: h.status || "Active",
+    status,
     createdBy: h.createdBy,
     createdAt: h.createdAt,
     updatedAt: h.updatedAt,
   };
+};
+
+const syncExpiredHolidays = async () => {
+  try {
+    const todayString = getTodayDateString();
+    await HolidayModel.updateMany(
+      {
+        isDeleted: false,
+        status: "Active",
+        $or: [
+          { endDateString: { $exists: true, $ne: "", $lt: todayString } },
+          {
+            $and: [
+              {
+                $or: [
+                  { endDateString: { $exists: false } },
+                  { endDateString: null },
+                  { endDateString: "" },
+                ],
+              },
+              { dateString: { $lt: todayString } },
+            ],
+          },
+        ],
+      },
+      { $set: { status: "Expired" } }
+    );
+  } catch (err) {
+    console.error("Error syncing expired holidays:", err);
+  }
 };
 
 const findOverlappingHoliday = async (startDateString, endDateString, excludeId = null) => {
@@ -400,7 +439,11 @@ export class HolidayController {
         classification: finalClassification,
         description: description ? description.trim() : "",
         color: finalColor,
-        status: ["Active", "Inactive"].includes(status) ? status : "Active",
+        status: ["Active", "Inactive", "Expired"].includes(status)
+          ? status
+          : rangeDetails.endDateString < getTodayDateString()
+            ? "Expired"
+            : "Active",
         createdBy: req.user?._id || null,
       });
 
@@ -417,6 +460,8 @@ export class HolidayController {
 
   static async getAllHolidays(req, res) {
     try {
+      await syncExpiredHolidays();
+
       const {
         year,
         month,
@@ -453,7 +498,7 @@ export class HolidayController {
         filter.type = normalizeHolidayType(type);
       }
 
-      if (status && ["Active", "Inactive"].includes(status)) {
+      if (status && ["Active", "Inactive", "Expired"].includes(status)) {
         filter.status = status;
       }
 
@@ -511,6 +556,8 @@ export class HolidayController {
 
   static async getCalendarHolidays(req, res) {
     try {
+      await syncExpiredHolidays();
+
       const now = new Date();
       const currentYear = now.getUTCFullYear();
       const currentMonth = now.getUTCMonth() + 1;
@@ -541,10 +588,11 @@ export class HolidayController {
         isDeleted: false,
       };
 
-      if (rawStatus && ["Active", "Inactive"].includes(rawStatus)) {
+      if (rawStatus && ["Active", "Inactive", "Expired"].includes(rawStatus)) {
         filter.status = rawStatus;
+      } else if (rawStatus && rawStatus.toLowerCase() === "all") {
       } else {
-        filter.status = "Active";
+        filter.status = { $ne: "Inactive" };
       }
 
       if (rawType && String(rawType).trim()) {
@@ -628,6 +676,8 @@ export class HolidayController {
 
   static async getHolidayById(req, res) {
     try {
+      await syncExpiredHolidays();
+
       const { id } = req.params;
 
       if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -773,7 +823,7 @@ export class HolidayController {
         holiday.description = description ? description.trim() : "";
       }
 
-      if (status && ["Active", "Inactive"].includes(status)) {
+      if (status && ["Active", "Inactive", "Expired"].includes(status)) {
         holiday.status = status;
       }
 
