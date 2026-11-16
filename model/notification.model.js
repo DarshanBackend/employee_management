@@ -13,7 +13,6 @@ const NotificationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true,
     },
     sender: {
       type: mongoose.Schema.Types.ObjectId,
@@ -43,13 +42,11 @@ const NotificationSchema = new mongoose.Schema(
       type: String,
       enum: NOTIFICATION_CATEGORIES,
       default: "System",
-      index: true,
     },
     type: {
       type: String,
       default: "GENERAL",
       trim: true,
-      index: true,
     },
     referenceId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -62,7 +59,6 @@ const NotificationSchema = new mongoose.Schema(
     isRead: {
       type: Boolean,
       default: false,
-      index: true,
     },
     readAt: {
       type: Date,
@@ -71,7 +67,6 @@ const NotificationSchema = new mongoose.Schema(
     isDeleted: {
       type: Boolean,
       default: false,
-      index: true,
     },
     formattedTime: {
       type: String,
@@ -98,10 +93,8 @@ const NotificationSchema = new mongoose.Schema(
   }
 );
 
-NotificationSchema.index({ recipient: 1, isRead: 1, isDeleted: 1 });
-NotificationSchema.index({ recipient: 1, category: 1, isDeleted: 1 });
+NotificationSchema.index({ recipient: 1 });
 NotificationSchema.index({ createdAt: -1 });
 
 const NotificationModel = mongoose.model("Notification", NotificationSchema);
 export default NotificationModel;
-

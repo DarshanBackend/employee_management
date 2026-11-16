@@ -1024,7 +1024,7 @@ export class PayrollController {
           sender: req.user?._id,
           referenceId: payrollRunDoc._id,
           referenceModel: "PayrollRun",
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       await notifyAdmins({
@@ -1035,7 +1035,7 @@ export class PayrollController {
         sender: req.user?._id,
         referenceId: payrollRunDoc._id,
         referenceModel: "PayrollRun",
-      }).catch(() => {});
+      }).catch(() => { });
 
       return sendSuccessResponse(
         res,
@@ -1144,7 +1144,7 @@ export class PayrollController {
         sender: req.user?._id,
         referenceId: employee._id,
         referenceModel: "User",
-      }).catch(() => {});
+      }).catch(() => { });
 
       return sendSuccessResponse(res, "Payslip generated successfully", payslipData);
     } catch (error) {

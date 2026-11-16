@@ -606,7 +606,7 @@ export class DocumentController {
           senderAvatar: employeeDoc.avatarUrl || null,
           referenceId: newDoc._id,
           referenceModel: "Document",
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       return sendCreatedResponse(
@@ -774,7 +774,7 @@ export class DocumentController {
         sender: req.user?._id,
         referenceId: doc._id,
         referenceModel: "Document",
-      }).catch(() => {});
+      }).catch(() => { });
 
       return sendSuccessResponse(res, `Document status updated to ${verificationStatus}`, doc);
     } catch (error) {

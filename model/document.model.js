@@ -35,7 +35,6 @@ const DocumentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Assigned employee is required"],
-      index: true,
     },
     fileName: {
       type: String,
@@ -76,7 +75,6 @@ const DocumentSchema = new mongoose.Schema(
       enum: VERIFICATION_STATUSES,
       default: "Pending Review",
       trim: true,
-      index: true,
     },
     verifiedAt: {
       type: Date,
@@ -110,7 +108,6 @@ const DocumentSchema = new mongoose.Schema(
     isDeleted: {
       type: Boolean,
       default: false,
-      index: true,
     },
   },
   {
@@ -133,9 +130,7 @@ const DocumentSchema = new mongoose.Schema(
   }
 );
 
-DocumentSchema.index({ documentCategory: 1, isDeleted: 1 });
-DocumentSchema.index({ employee: 1, isDeleted: 1 });
-DocumentSchema.index({ verificationStatus: 1, isDeleted: 1 });
+DocumentSchema.index({ employee: 1 });
 
 const DocumentModel = mongoose.model("Document", DocumentSchema);
 export default DocumentModel;

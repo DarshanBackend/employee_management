@@ -67,4 +67,3 @@ const ProfileUpdateRequestModel = mongoose.model(
 );
 
 export default ProfileUpdateRequestModel;
-

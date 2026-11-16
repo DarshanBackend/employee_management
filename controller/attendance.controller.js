@@ -484,7 +484,7 @@ export class AttendanceController {
           senderAvatar: req.user?.avatarUrl || null,
           referenceId: attendance._id,
           referenceModel: "Attendance",
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       return sendSuccessResponse(res, `Check-in successful at ${checkInDisplay}`, {
@@ -865,13 +865,13 @@ export class AttendanceController {
             subtitle: hasCheckedOut
               ? `Recorded departure at ${attendance?.checkOutDisplay || ""}`
               : hasCheckedIn
-              ? `Checked in at ${attendance?.checkInDisplay || ""}`
-              : "Tap below to record your arrival.",
+                ? `Checked in at ${attendance?.checkInDisplay || ""}`
+                : "Tap below to record your arrival.",
             buttonText: hasCheckedOut
               ? "Shift Completed"
               : hasCheckedIn
-              ? "Clock Out (Check-Out)"
-              : "Clock In (Check-In)",
+                ? "Clock Out (Check-Out)"
+                : "Clock In (Check-In)",
             buttonAction: hasCheckedOut ? "NONE" : hasCheckedIn ? "CLOCK_OUT" : "CLOCK_IN",
             isEnabled: !hasCheckedOut,
           },
@@ -1106,13 +1106,13 @@ export class AttendanceController {
           subtitle: hasCheckedOut
             ? `Recorded departure at ${attendance?.checkOutDisplay || ""}`
             : hasCheckedIn
-            ? `Checked in at ${attendance?.checkInDisplay || ""}`
-            : "Tap below to record your arrival.",
+              ? `Checked in at ${attendance?.checkInDisplay || ""}`
+              : "Tap below to record your arrival.",
           buttonText: hasCheckedOut
             ? "Shift Completed"
             : hasCheckedIn
-            ? "Clock Out (Check-Out)"
-            : "Clock In (Check-In)",
+              ? "Clock Out (Check-Out)"
+              : "Clock In (Check-In)",
           buttonAction: hasCheckedOut ? "NONE" : hasCheckedIn ? "CLOCK_OUT" : "CLOCK_IN",
           isEnabled: hasCheckedOut ? false : hasCheckedIn ? canCheckOut : canCheckIn,
         },

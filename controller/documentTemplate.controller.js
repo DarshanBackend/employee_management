@@ -7,8 +7,6 @@ import DocumentTemplateModel, {
 import UserModel from "../model/user.model.js";
 import DepartmentModel from "../model/department.model.js";
 import DesignationModel from "../model/designation.model.js";
-import OrganizationModel from "../model/organization.model.js";
-import BranchModel from "../model/branch.model.js";
 import DocumentModel from "../model/document.model.js";
 import { uploadFile, deleteFileFromS3 } from "../middleware/imageupload.js";
 import {
@@ -291,14 +289,8 @@ const getEmployeeVariableValues = async (employeeId = null, fallbackUserId = nul
       .populate("designation", "designationName designationTitle");
   }
 
-  // Dynamic organization details
-  const org = await OrganizationModel.findOne().sort({ createdAt: -1 });
-  const companyName = org?.companyLegalName || org?.companyName || "";
-
-  // Dynamic branch / location details
-  const hqBranch =
-    (await BranchModel.findOne({ isHeadquarters: true, isDeleted: false })) ||
-    (await BranchModel.findOne({ isDeleted: false }));
+  const companyName = "Company";
+  const hqBranch = null;
 
   const currentDateStr = new Date().toLocaleDateString("en-GB", {
     day: "2-digit",

@@ -116,8 +116,8 @@ export class LeaveTypeController {
         leaveQuota !== undefined
           ? leaveQuota
           : leaveBalance !== undefined
-          ? leaveBalance
-          : annualAllowedDays;
+            ? leaveBalance
+            : annualAllowedDays;
 
       let balanceNum = 0;
       if (rawBalance !== undefined && rawBalance !== null && rawBalance !== "") {
@@ -405,8 +405,8 @@ export class LeaveTypeController {
         leaveQuota !== undefined
           ? leaveQuota
           : leaveBalance !== undefined
-          ? leaveBalance
-          : annualAllowedDays;
+            ? leaveBalance
+            : annualAllowedDays;
 
       if (rawBalance !== undefined && rawBalance !== null && rawBalance !== "") {
         const balanceNum = Number(rawBalance);

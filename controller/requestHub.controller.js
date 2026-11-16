@@ -469,7 +469,7 @@ export class RequestHubController {
           senderAvatar: req.user?.avatarUrl || null,
           referenceId: newExpense._id,
           referenceModel: "Expense",
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       return sendCreatedResponse(res, "Expense request submitted successfully", newExpense);

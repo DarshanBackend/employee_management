@@ -30,26 +30,22 @@ const AnnouncementSchema = new mongoose.Schema(
       type: String,
       enum: ANNOUNCEMENT_TARGET_TYPES,
       default: "All Employees",
-      index: true,
     },
     targetEmployees: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
-        index: true,
       },
     ],
     targetEmployee: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
     department: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Department",
       default: null,
-      index: true,
     },
     departmentName: {
       type: String,
@@ -84,12 +80,10 @@ const AnnouncementSchema = new mongoose.Schema(
       type: String,
       enum: ANNOUNCEMENT_STATUSES,
       default: "Active",
-      index: true,
     },
     isDeleted: {
       type: Boolean,
       default: false,
-      index: true,
     },
   },
   {
@@ -112,11 +106,7 @@ const AnnouncementSchema = new mongoose.Schema(
   }
 );
 
-AnnouncementSchema.index({ recipient: 1, isDeleted: 1 });
-AnnouncementSchema.index({ targetEmployees: 1, isDeleted: 1 });
-AnnouncementSchema.index({ targetType: 1, isDeleted: 1 });
 AnnouncementSchema.index({ createdAt: -1 });
 
 const AnnouncementModel = mongoose.model("Announcement", AnnouncementSchema);
 export default AnnouncementModel;
-

@@ -126,7 +126,6 @@ const ShiftSchema = new mongoose.Schema(
 );
 
 ShiftSchema.index({ shiftName: 1 });
-ShiftSchema.index({ status: 1 });
 
 const ShiftModel = mongoose.model("Shift", ShiftSchema);
 export default ShiftModel;

@@ -351,7 +351,7 @@ export class AnnouncementController {
               referenceModel: "Announcement",
             });
           })
-          .catch(() => {});
+          .catch(() => { });
       } else if (resolution.targetEmployeeIds && resolution.targetEmployeeIds.length > 0) {
         notifyUsers(resolution.targetEmployeeIds, {
           title: `Company Announcement: ${newAnnouncement.title}`,
@@ -362,7 +362,7 @@ export class AnnouncementController {
           senderName: publisherName,
           referenceId: newAnnouncement._id,
           referenceModel: "Announcement",
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       return sendCreatedResponse(

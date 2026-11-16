@@ -10,9 +10,7 @@ import { HolidayController } from "../controller/holiday.controller.js";
 import { AttendanceRuleController } from "../controller/attendanceRule.controller.js";
 import { PayrollController } from "../controller/payroll.controller.js";
 import { ExportReportController } from "../controller/exportReport.controller.js";
-import { ReportsAnalyticsController } from "../controller/reportsAnalytics.controller.js";
 import { RoleController } from "../controller/role.controller.js";
-import { OrganizationController } from "../controller/organization.controller.js";
 import { AuditLogController } from "../controller/auditLog.controller.js";
 import { DocumentController } from "../controller/document.controller.js";
 import { DocumentTemplateController } from "../controller/documentTemplate.controller.js";
@@ -29,12 +27,9 @@ import {
   updateProfile,
   getSettings,
   updateSettings,
-  getAnalytics,
-  getInsights,
-  recordCompletedLesson,
   deleteAccount,
 } from "../controller/user.controller.js";
-import { UserAuth, adminAuth, employeeAuth, requireSubscription } from "../middleware/auth.middleware.js";
+import { UserAuth, adminAuth, employeeAuth } from "../middleware/auth.middleware.js";
 import { upload, listBucketObjects, deleteManyFromS3 } from "../middleware/imageupload.js";
 import {
   sendResponse,
@@ -173,10 +168,6 @@ indexRouter.post("/generateExport", UserAuth, ExportReportController.generateExp
 indexRouter.get("/downloadRecentExport/:id", UserAuth, ExportReportController.downloadRecentExport);
 indexRouter.delete("/deleteExport/:id", UserAuth, adminAuth, ExportReportController.deleteExport);
 
-indexRouter.get("/getReportsAnalytics", UserAuth, ReportsAnalyticsController.getReportsAnalytics);
-indexRouter.post("/exportAnalyticsPdf", UserAuth, ReportsAnalyticsController.exportAnalyticsPdf);
-indexRouter.get("/exportAnalyticsPdf", UserAuth, ReportsAnalyticsController.exportAnalyticsPdf);
-
 indexRouter.get("/getAllRoles", UserAuth, RoleController.getAllRoles);
 indexRouter.get("/getRoleById/:id", UserAuth, RoleController.getRoleById);
 indexRouter.post("/addRole", UserAuth, adminAuth, RoleController.addRole);
@@ -188,16 +179,6 @@ indexRouter.get("/getAvailablePermissions", UserAuth, RoleController.getAvailabl
 indexRouter.post("/assignRoleToUser", UserAuth, adminAuth, RoleController.assignRoleToUser);
 indexRouter.get("/getRoleAssignedUsers/:id", UserAuth, RoleController.getRoleAssignedUsers);
 indexRouter.get("/getMyPermissions", UserAuth, RoleController.getMyPermissions);
-
-indexRouter.get("/getOrganizationSettings", UserAuth, OrganizationController.getOrganizationSettings);
-indexRouter.get("/getOrganizationInfo", UserAuth, OrganizationController.getOrganizationInfo);
-indexRouter.patch("/updateOrganizationInfo", UserAuth, adminAuth, OrganizationController.updateOrganizationInfo);
-
-indexRouter.post("/addBranch", UserAuth, adminAuth, OrganizationController.addBranch);
-indexRouter.get("/getAllBranches", UserAuth, OrganizationController.getAllBranches);
-indexRouter.get("/getBranchById/:id", UserAuth, OrganizationController.getBranchById);
-indexRouter.patch("/updateBranch/:id", UserAuth, adminAuth, OrganizationController.updateBranch);
-indexRouter.delete("/deleteBranch/:id", UserAuth, adminAuth, OrganizationController.deleteBranch);
 
 indexRouter.get("/getAuditLogs", UserAuth, AuditLogController.getAuditLogs);
 indexRouter.get("/getAuditLogById/:id", UserAuth, AuditLogController.getAuditLogById);
@@ -263,10 +244,6 @@ indexRouter.delete("/deleteNotification/:id", UserAuth, NotificationController.d
 
 indexRouter.patch("/user/updateSettings", UserAuth, updateSettings);
 indexRouter.get("/user/getSettings", UserAuth, getSettings);
-
-indexRouter.patch("/user/updateAnalytics", UserAuth, requireSubscription, recordCompletedLesson);
-indexRouter.get("/user/getAnalytics", UserAuth, getAnalytics);
-indexRouter.get("/user/getInsights", UserAuth, getInsights);
 
 indexRouter.delete("/user/deleteAccount", UserAuth, deleteAccount);
 

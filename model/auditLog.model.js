@@ -83,7 +83,7 @@ const AuditLogSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-AuditLogSchema.index({ category: 1, isDeleted: 1 });
+AuditLogSchema.index({ category: 1 });
 AuditLogSchema.index({ eventDate: -1 });
 
 const AuditLogModel = mongoose.model("AuditLog", AuditLogSchema);

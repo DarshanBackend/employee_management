@@ -6,7 +6,6 @@ const ExpenseSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Employee reference is required"],
-      index: true,
     },
     title: {
       type: String,
@@ -46,7 +45,6 @@ const ExpenseSchema = new mongoose.Schema(
       type: String,
       enum: ["Pending", "Approved", "Rejected", "Cancelled"],
       default: "Pending",
-      index: true,
     },
     adminRemarks: {
       type: String,
@@ -65,7 +63,6 @@ const ExpenseSchema = new mongoose.Schema(
     isDeleted: {
       type: Boolean,
       default: false,
-      index: true,
     },
   },
   {
@@ -88,8 +85,7 @@ const ExpenseSchema = new mongoose.Schema(
   }
 );
 
-ExpenseSchema.index({ employee: 1, status: 1 });
+ExpenseSchema.index({ employee: 1 });
 
 const ExpenseModel = mongoose.model("Expense", ExpenseSchema);
 export default ExpenseModel;
-

@@ -85,12 +85,10 @@ const HolidaySchema = new mongoose.Schema(
     year: {
       type: Number,
       required: true,
-      index: true,
     },
     month: {
       type: Number,
       required: true,
-      index: true,
     },
     monthShort: {
       type: String,
@@ -171,10 +169,7 @@ const HolidaySchema = new mongoose.Schema(
   }
 );
 
-HolidaySchema.index({ dateString: 1, isDeleted: 1 });
-HolidaySchema.index({ startDateString: 1, isDeleted: 1 });
-HolidaySchema.index({ endDateString: 1, isDeleted: 1 });
-HolidaySchema.index({ year: 1, month: 1, isDeleted: 1 });
+HolidaySchema.index({ dateString: 1 });
 
 const HolidayModel = mongoose.model("Holiday", HolidaySchema);
 export default HolidayModel;

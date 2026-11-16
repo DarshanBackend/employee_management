@@ -102,7 +102,7 @@ export class ProfileUpdateRequestController {
         senderAvatar: employee.avatarUrl || null,
         referenceId: newRequest._id,
         referenceModel: "ProfileUpdateRequest",
-      }).catch(() => {});
+      }).catch(() => { });
 
       const responseObj = newRequest.toObject();
       responseObj.formattedDate = formatDDMMYYYY(newRequest.createdAt);
@@ -461,7 +461,7 @@ export class ProfileUpdateRequestController {
         sender: req.user?._id,
         referenceId: request._id,
         referenceModel: "ProfileUpdateRequest",
-      }).catch(() => {});
+      }).catch(() => { });
 
       return sendSuccessResponse(
         res,

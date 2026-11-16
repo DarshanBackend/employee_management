@@ -541,7 +541,7 @@ export class PendingActionController {
           sender: req.user?._id,
           referenceId: leave._id,
           referenceModel: "Leave",
-        }).catch(() => {});
+        }).catch(() => { });
 
         return sendSuccessResponse(
           res,
@@ -620,7 +620,7 @@ export class PendingActionController {
           sender: req.user?._id,
           referenceId: request._id,
           referenceModel: "AttendanceRegularization",
-        }).catch(() => {});
+        }).catch(() => { });
 
         return sendSuccessResponse(
           res,
@@ -702,7 +702,7 @@ export class PendingActionController {
             sender: req.user?._id,
             referenceId: profileUpdateReq._id,
             referenceModel: "ProfileUpdateRequest",
-          }).catch(() => {});
+          }).catch(() => { });
 
           return sendSuccessResponse(
             res,
@@ -742,7 +742,7 @@ export class PendingActionController {
           sender: req.user?._id,
           referenceId: doc._id,
           referenceModel: "Document",
-        }).catch(() => {});
+        }).catch(() => { });
 
         return sendSuccessResponse(
           res,
@@ -810,7 +810,7 @@ export class PendingActionController {
             sender: req.user?._id,
             referenceId: lv._id,
             referenceModel: "Leave",
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
 
@@ -832,7 +832,7 @@ export class PendingActionController {
             sender: req.user?._id,
             referenceId: att._id,
             referenceModel: "AttendanceRegularization",
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
 
@@ -883,7 +883,7 @@ export class PendingActionController {
             sender: req.user?._id,
             referenceId: pu._id,
             referenceModel: "ProfileUpdateRequest",
-          }).catch(() => {});
+          }).catch(() => { });
         }
 
         const pendingDocs = await DocumentModel.find({ verificationStatus: "Pending Review" });
@@ -902,7 +902,7 @@ export class PendingActionController {
             sender: req.user?._id,
             referenceId: doc._id,
             referenceModel: "Document",
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
 

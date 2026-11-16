@@ -90,7 +90,7 @@ export class HomeController {
         role: req.user?.role || "Admin",
         subtitle: "Manage process payroll and more — all in one place.",
         buttonText: "View Reports",
-        buttonAction: "/reports-analytics",
+        buttonAction: "/reports",
       };
 
       const totalEmployeesCount = await UserModel.countDocuments({

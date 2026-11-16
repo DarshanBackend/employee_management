@@ -1350,7 +1350,7 @@ export class EmployeeController {
       }
 
       if (employee.avatarUrl) {
-        await deleteFileFromS3(employee.avatarUrl).catch(() => {});
+        await deleteFileFromS3(employee.avatarUrl).catch(() => { });
       }
       if (employee.documents) {
         const docFields = [
@@ -1363,13 +1363,13 @@ export class EmployeeController {
         ];
         for (const field of docFields) {
           if (employee.documents[field]) {
-            await deleteFileFromS3(employee.documents[field]).catch(() => {});
+            await deleteFileFromS3(employee.documents[field]).catch(() => { });
           }
         }
         if (Array.isArray(employee.documents.otherDocuments)) {
           for (const doc of employee.documents.otherDocuments) {
             if (doc?.url) {
-              await deleteFileFromS3(doc.url).catch(() => {});
+              await deleteFileFromS3(doc.url).catch(() => { });
             }
           }
         }

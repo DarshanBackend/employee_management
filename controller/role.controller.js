@@ -32,7 +32,7 @@ export const SYSTEM_PERMISSIONS = [
   {
     id: "export_reports",
     name: "Export Reports",
-    category: "Reports & Analytics",
+    category: "Reports Management",
     description: "Generate and export HR, payroll, and attendance reports to CSV/PDF/Excel",
   },
   {

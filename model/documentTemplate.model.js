@@ -86,7 +86,6 @@ const DocumentTemplateSchema = new mongoose.Schema(
       type: String,
       required: [true, "Template title is required"],
       trim: true,
-      index: true,
     },
     category: {
       type: String,
@@ -96,7 +95,6 @@ const DocumentTemplateSchema = new mongoose.Schema(
       },
       default: "Recruitment",
       required: [true, "Template category is required"],
-      index: true,
     },
     version: {
       type: String,
@@ -146,12 +144,10 @@ const DocumentTemplateSchema = new mongoose.Schema(
       type: String,
       enum: TEMPLATE_STATUSES,
       default: "Active",
-      index: true,
     },
     isDeleted: {
       type: Boolean,
       default: false,
-      index: true,
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -171,8 +167,7 @@ const DocumentTemplateSchema = new mongoose.Schema(
   }
 );
 
-DocumentTemplateSchema.index({ category: 1, isDeleted: 1 });
-DocumentTemplateSchema.index({ templateTitle: "text", description: "text" });
+DocumentTemplateSchema.index({ category: 1 });
 
 const DocumentTemplateModel = mongoose.model(
   "DocumentTemplate",

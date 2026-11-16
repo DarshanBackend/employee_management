@@ -69,9 +69,7 @@ const RoleSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-RoleSchema.index({ roleTitle: 1, isDeleted: 1 });
-RoleSchema.index({ category: 1, isDeleted: 1 });
-RoleSchema.index({ slug: 1, isDeleted: 1 });
+RoleSchema.index({ roleTitle: 1 });
 
 const RoleModel = mongoose.model("Role", RoleSchema);
 export default RoleModel;
