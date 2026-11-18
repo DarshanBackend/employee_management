@@ -5,6 +5,7 @@ import LeaveModel from "../model/leave.model.js";
 import ShiftModel from "../model/shift.model.js";
 import ShiftRosterModel from "../model/shiftRoster.model.js";
 import UserModel from "../model/user.model.js";
+import DesignationModel from "../model/designation.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import { notifyAdmins, notifyUser } from "../utils/notification.util.js";
 import {
@@ -1985,6 +1986,740 @@ export class AttendanceController {
     } catch (error) {
       console.error("Get Monthly History Error:", error);
       return sendErrorResponse(res, 500, "Failed to retrieve monthly attendance history", error);
+    }
+  }
+
+  static async getAdminDailyReport(req, res) {
+    try {
+      const {
+        date,
+        status = "All",
+        shift,
+        search,
+        page = 1,
+        limit = 10,
+        sortBy = "name",
+        sortOrder = "asc",
+      } = req.query;
+
+      const targetDate = date ? getNormalizedDateString(date) : getNormalizedDateString();
+      const formattedToday = formatDisplayDate(targetDate);
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.max(1, parseInt(limit, 10) || 10);
+      const skip = (pageNum - 1) * limitNum;
+
+      const userFilter = {
+        role: "employee",
+        isUserDeleted: { $ne: true },
+        employeeStatus: { $ne: "Terminated" },
+      };
+
+      if (shift && mongoose.Types.ObjectId.isValid(shift)) {
+        userFilter.shift = new mongoose.Types.ObjectId(shift);
+      }
+
+      if (search && String(search).trim()) {
+        const rgx = new RegExp(String(search).trim(), "i");
+        userFilter.$or = [
+          { name: rgx },
+          { firstName: rgx },
+          { lastName: rgx },
+          { email: rgx },
+          { employeeId: rgx },
+        ];
+      }
+
+      const allEmployees = await UserModel.find(userFilter)
+        .select("name firstName lastName email employeeId avatarUrl designation shift")
+        .populate("designation", "designationName")
+        .populate("shift", "shiftName startTime endTime workHoursDisplay")
+        .lean();
+
+      const employeeIds = allEmployees.map((e) => e._id);
+
+      const [attendances, leaves] = await Promise.all([
+        AttendanceModel.find({
+          employee: { $in: employeeIds },
+          date: targetDate,
+        })
+          .populate("shift", "shiftName startTime endTime workHoursDisplay")
+          .lean(),
+        LeaveModel.find({
+          employee: { $in: employeeIds },
+          status: "Approved",
+          fromDate: { $lte: targetDate },
+          toDate: { $gte: targetDate },
+          isDeleted: { $ne: true },
+        }).lean(),
+      ]);
+
+      const attendanceMap = new Map();
+      attendances.forEach((att) => {
+        attendanceMap.set(String(att.employee), att);
+      });
+
+      const leaveMap = new Map();
+      leaves.forEach((lv) => {
+        leaveMap.set(String(lv.employee), lv);
+      });
+
+      let presentCount = 0;
+      let lateCount = 0;
+      let halfDayCount = 0;
+      let absentCount = 0;
+      let onLeaveCount = 0;
+      let regularizedCount = 0;
+
+      const reportRows = allEmployees.map((emp) => {
+        const empIdStr = String(emp._id);
+        const att = attendanceMap.get(empIdStr);
+        const leave = leaveMap.get(empIdStr);
+
+        let finalStatus = "Absent";
+        let checkInDisplay = null;
+        let checkOutDisplay = null;
+        let totalWorkHours = "0h 00m";
+        let overtimeMinutes = 0;
+        let isCheckInRegularized = false;
+        let isCheckOutRegularized = false;
+        let attendanceId = null;
+        let activeShift = att?.shift || emp.shift || null;
+
+        if (att) {
+          attendanceId = att._id;
+          finalStatus = att.status || (att.checkInTime ? "Present" : "Absent");
+          checkInDisplay = att.checkInDisplay || null;
+          checkOutDisplay = att.checkOutDisplay || null;
+          totalWorkHours = att.totalWorkHoursDisplay || "0h 00m";
+          overtimeMinutes = att.overtimeMinutes || 0;
+          isCheckInRegularized = Boolean(att.isCheckInRegularized);
+          isCheckOutRegularized = Boolean(att.isCheckOutRegularized);
+        } else if (leave) {
+          finalStatus = "On Leave";
+        } else {
+          finalStatus = "Absent";
+        }
+
+        const normalizedStatus = String(finalStatus).trim();
+        if (normalizedStatus === "Present") presentCount++;
+        else if (normalizedStatus === "Late") lateCount++;
+        else if (normalizedStatus === "Half Day") halfDayCount++;
+        else if (normalizedStatus === "On Leave") onLeaveCount++;
+        else if (normalizedStatus === "Regularized") regularizedCount++;
+        else absentCount++;
+
+        const displayName =
+          emp.name ||
+          `${emp.firstName || ""} ${emp.lastName || ""}`.trim() ||
+          "Employee";
+
+        return {
+          _id: attendanceId,
+          attendanceId,
+          date: targetDate,
+          formattedDate: formattedToday,
+          status: finalStatus,
+          checkInTime: checkInDisplay,
+          checkOutTime: checkOutDisplay,
+          totalWorkHours,
+          overtimeMinutes,
+          isCheckInRegularized,
+          isCheckOutRegularized,
+          employee: {
+            _id: emp._id,
+            employeeId: emp.employeeId || "N/A",
+            name: displayName,
+            email: emp.email,
+            avatarUrl: emp.avatarUrl || null,
+            designation: emp.designation?.designationName || "Employee",
+          },
+          shift: activeShift
+            ? {
+                _id: activeShift._id,
+                shiftName: activeShift.shiftName,
+                startTime: activeShift.startTime,
+                endTime: activeShift.endTime,
+                workHoursDisplay: activeShift.workHoursDisplay || "9 Hours",
+              }
+            : null,
+        };
+      });
+
+      let filteredRows = reportRows;
+      if (status && status !== "All") {
+        const cleanStatus = String(status).trim().toLowerCase();
+        filteredRows = reportRows.filter(
+          (r) => String(r.status).trim().toLowerCase() === cleanStatus
+        );
+      }
+
+      filteredRows.sort((a, b) => {
+        let valA = a.employee.name.toLowerCase();
+        let valB = b.employee.name.toLowerCase();
+        if (sortBy === "employeeId") {
+          valA = a.employee.employeeId.toLowerCase();
+          valB = b.employee.employeeId.toLowerCase();
+        } else if (sortBy === "status") {
+          valA = a.status.toLowerCase();
+          valB = b.status.toLowerCase();
+        } else if (sortBy === "checkInTime") {
+          valA = a.checkInTime || "";
+          valB = b.checkInTime || "";
+        }
+        if (sortOrder === "desc") {
+          return valA > valB ? -1 : valA < valB ? 1 : 0;
+        }
+        return valA < valB ? -1 : valA > valB ? 1 : 0;
+      });
+
+      const totalFiltered = filteredRows.length;
+      const paginatedRecords = filteredRows.slice(skip, skip + limitNum);
+
+      return sendSuccessResponse(res, "Daily attendance report retrieved successfully", {
+        date: targetDate,
+        formattedDate: formattedToday,
+        summary: {
+          totalEmployees: allEmployees.length,
+          present: presentCount + regularizedCount,
+          late: lateCount,
+          halfDay: halfDayCount,
+          onLeave: onLeaveCount,
+          absent: absentCount,
+          regularized: regularizedCount,
+          attendancePercentage: allEmployees.length
+            ? Math.round(((presentCount + lateCount + regularizedCount) / allEmployees.length) * 100)
+            : 0,
+        },
+        pagination: {
+          total: totalFiltered,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(totalFiltered / limitNum) || 1,
+        },
+        records: paginatedRecords,
+      });
+    } catch (error) {
+      console.error("Get Admin Daily Report Error:", error);
+      return sendErrorResponse(res, 500, "Failed to fetch daily attendance report", error);
+    }
+  }
+
+  static async getAdminHistory(req, res) {
+    try {
+      const {
+        startDate,
+        endDate,
+        date,
+        month,
+        year,
+        employeeId,
+        status = "All",
+        search,
+        page = 1,
+        limit = 15,
+        sortBy = "date",
+        sortOrder = "desc",
+      } = req.query;
+
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.max(1, parseInt(limit, 10) || 15);
+      const skip = (pageNum - 1) * limitNum;
+
+      const now = new Date();
+      const monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+      ];
+
+      const queryFilter = {};
+
+      if (startDate && endDate) {
+        queryFilter.date = {
+          $gte: getNormalizedDateString(startDate),
+          $lte: getNormalizedDateString(endDate),
+        };
+      } else if (date) {
+        queryFilter.date = getNormalizedDateString(date);
+      } else if (month || year) {
+        let y = year ? parseInt(year, 10) : now.getFullYear();
+        let m = month;
+        let monthNum;
+        if (m) {
+          if (/^\d{1,2}$/.test(String(m))) {
+            monthNum = parseInt(m, 10);
+          } else {
+            const idx = monthNames.findIndex(
+              (name) => name.toLowerCase() === String(m).toLowerCase()
+            );
+            monthNum = idx >= 0 ? idx + 1 : now.getMonth() + 1;
+          }
+        } else {
+          monthNum = now.getMonth() + 1;
+        }
+        const paddedMonth = String(monthNum).padStart(2, "0");
+        queryFilter.date = new RegExp(`^${y}-${paddedMonth}`);
+      }
+
+      if (status && status !== "All") {
+        queryFilter.status = new RegExp(`^${String(status).trim()}$`, "i");
+      }
+
+      let employeeQuery = { isUserDeleted: { $ne: true } };
+      let applyEmployeeFilter = false;
+
+      if (employeeId && String(employeeId).trim()) {
+        applyEmployeeFilter = true;
+        const cleanEmpId = String(employeeId).trim();
+        if (mongoose.Types.ObjectId.isValid(cleanEmpId)) {
+          employeeQuery._id = new mongoose.Types.ObjectId(cleanEmpId);
+        } else {
+          employeeQuery.employeeId = cleanEmpId;
+        }
+      }
+
+      if (search && String(search).trim()) {
+        applyEmployeeFilter = true;
+        const rgx = new RegExp(String(search).trim(), "i");
+        employeeQuery.$or = [
+          { name: rgx },
+          { firstName: rgx },
+          { lastName: rgx },
+          { email: rgx },
+          { employeeId: rgx },
+        ];
+      }
+
+      if (applyEmployeeFilter) {
+        const matchedEmployees = await UserModel.find(employeeQuery).select("_id").lean();
+        const matchedIds = matchedEmployees.map((e) => e._id);
+        queryFilter.employee = { $in: matchedIds };
+      }
+
+      const sortOptions = {};
+      const order = sortOrder === "asc" ? 1 : -1;
+      if (sortBy === "date") sortOptions.date = order;
+      else if (sortBy === "createdAt") sortOptions.createdAt = order;
+      else if (sortBy === "status") sortOptions.status = order;
+      else sortOptions.date = -1;
+      sortOptions._id = -1;
+
+      const [total, records, summaryAgg] = await Promise.all([
+        AttendanceModel.countDocuments(queryFilter),
+        AttendanceModel.find(queryFilter)
+          .populate({
+            path: "employee",
+            select: "name firstName lastName email employeeId avatarUrl designation",
+            populate: { path: "designation", select: "designationName" },
+          })
+          .populate("shift", "shiftName startTime endTime workHoursDisplay")
+          .sort(sortOptions)
+          .skip(skip)
+          .limit(limitNum)
+          .lean(),
+        AttendanceModel.aggregate([
+          { $match: queryFilter },
+          { $group: { _id: "$status", count: { $sum: 1 } } },
+        ]),
+      ]);
+
+      const counts = {
+        present: 0,
+        late: 0,
+        halfDay: 0,
+        absent: 0,
+        onLeave: 0,
+        regularized: 0,
+      };
+
+      summaryAgg.forEach((item) => {
+        const st = String(item._id || "").trim().toLowerCase();
+        if (st === "present") counts.present += item.count;
+        else if (st === "late") counts.late += item.count;
+        else if (st === "half day") counts.halfDay += item.count;
+        else if (st === "absent") counts.absent += item.count;
+        else if (st === "on leave") counts.onLeave += item.count;
+        else if (st === "regularized") counts.regularized += item.count;
+      });
+
+      const formattedList = records.map((item) => {
+        const emp = item.employee;
+        const displayName =
+          emp?.name ||
+          `${emp?.firstName || ""} ${emp?.lastName || ""}`.trim() ||
+          "Employee";
+
+        return {
+          _id: item._id,
+          date: item.date,
+          formattedDate: item.formattedDate || formatDisplayDate(item.date),
+          status: item.status || "Present",
+          checkInTime: item.checkInDisplay || null,
+          checkOutTime: item.checkOutDisplay || null,
+          totalWorkHours: item.totalWorkHoursDisplay || "0h 00m",
+          totalWorkMinutes: item.totalWorkMinutes || 0,
+          overtimeMinutes: item.overtimeMinutes || 0,
+          isCheckInRegularized: Boolean(item.isCheckInRegularized),
+          isCheckOutRegularized: Boolean(item.isCheckOutRegularized),
+          notes: item.notes || "",
+          employee: {
+            _id: emp?._id || null,
+            employeeId: emp?.employeeId || "N/A",
+            name: displayName,
+            email: emp?.email || "",
+            avatarUrl: emp?.avatarUrl || null,
+            designation: emp?.designation?.designationName || "Employee",
+          },
+          shift: item.shift
+            ? {
+                _id: item.shift._id,
+                shiftName: item.shift.shiftName,
+                startTime: item.shift.startTime,
+                endTime: item.shift.endTime,
+                workHoursDisplay: item.shift.workHoursDisplay || "9 Hours",
+              }
+            : null,
+          createdAt: item.createdAt,
+        };
+      });
+
+      return sendSuccessResponse(res, "Admin attendance history retrieved successfully", {
+        summary: {
+          totalRecords: total,
+          present: counts.present + counts.regularized,
+          late: counts.late,
+          halfDay: counts.halfDay,
+          absent: counts.absent,
+          onLeave: counts.onLeave,
+          regularized: counts.regularized,
+        },
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum) || 1,
+        },
+        records: formattedList,
+      });
+    } catch (error) {
+      console.error("Get Admin Attendance History Error:", error);
+      return sendErrorResponse(res, 500, "Failed to retrieve attendance history", error);
+    }
+  }
+
+  static async getAdminSummary(req, res) {
+    try {
+      const {
+        date,
+        month,
+        year,
+      } = req.query;
+
+      const now = new Date();
+      const targetDate = date ? getNormalizedDateString(date) : getNormalizedDateString();
+      const formattedToday = formatDisplayDate(targetDate);
+
+      const monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+      ];
+
+      let targetYear = year ? parseInt(year, 10) : now.getFullYear();
+      let targetMonthNum;
+      if (month) {
+        if (/^\d{1,2}$/.test(String(month))) {
+          targetMonthNum = parseInt(month, 10);
+        } else {
+          const idx = monthNames.findIndex(
+            (m) => m.toLowerCase() === String(month).toLowerCase()
+          );
+          targetMonthNum = idx >= 0 ? idx + 1 : now.getMonth() + 1;
+        }
+      } else {
+        targetMonthNum = now.getMonth() + 1;
+      }
+
+      const paddedMonth = String(targetMonthNum).padStart(2, "0");
+      const monthPrefix = `${targetYear}-${paddedMonth}`;
+      const monthLabel = `${monthNames[targetMonthNum - 1]} ${targetYear}`;
+
+      const employeeBaseFilter = {
+        role: "employee",
+        isUserDeleted: { $ne: true },
+        employeeStatus: { $ne: "Terminated" },
+      };
+
+      const allActiveEmployees = await UserModel.find(employeeBaseFilter)
+        .select("_id name")
+        .lean();
+
+      const totalEmployeesCount = allActiveEmployees.length;
+      const employeeIds = allActiveEmployees.map((e) => e._id);
+
+      const [
+        todayAttendances,
+        todayLeaves,
+        monthAttendancesAgg,
+        pendingRegularizationsCount,
+      ] = await Promise.all([
+        AttendanceModel.find({
+          employee: { $in: employeeIds },
+          date: targetDate,
+        })
+          .populate("shift", "shiftName startTime endTime")
+          .lean(),
+        LeaveModel.countDocuments({
+          employee: { $in: employeeIds },
+          status: "Approved",
+          fromDate: { $lte: targetDate },
+          toDate: { $gte: targetDate },
+          isDeleted: { $ne: true },
+        }),
+        AttendanceModel.aggregate([
+          {
+            $match: {
+              employee: { $in: employeeIds },
+              date: new RegExp(`^${monthPrefix}`),
+            },
+          },
+          {
+            $group: {
+              _id: "$status",
+              count: { $sum: 1 },
+              totalMinutes: { $sum: "$totalWorkMinutes" },
+              totalOvertime: { $sum: "$overtimeMinutes" },
+            },
+          },
+        ]),
+        AttendanceRegularizationModel.countDocuments({
+          employee: { $in: employeeIds },
+          status: "Pending",
+        }),
+      ]);
+
+      let todayPresent = 0;
+      let todayLate = 0;
+      let todayHalfDay = 0;
+      let todayRegularized = 0;
+
+      todayAttendances.forEach((att) => {
+        const st = String(att.status || "").trim();
+        if (st === "Present") todayPresent++;
+        else if (st === "Late") todayLate++;
+        else if (st === "Half Day") todayHalfDay++;
+        else if (st === "Regularized") todayRegularized++;
+      });
+
+      const todayOnLeave = todayLeaves;
+      const recordedCount = todayPresent + todayLate + todayHalfDay + todayRegularized;
+      const todayAbsent = Math.max(0, totalEmployeesCount - (recordedCount + todayOnLeave));
+      const todayAttendanceRate = totalEmployeesCount
+        ? Math.round(((todayPresent + todayLate + todayRegularized) / totalEmployeesCount) * 100)
+        : 0;
+
+      let monthTotalRecords = 0;
+      let monthTotalMinutes = 0;
+      let monthTotalOvertimeMinutes = 0;
+      let monthLateCount = 0;
+
+      monthAttendancesAgg.forEach((item) => {
+        monthTotalRecords += item.count;
+        monthTotalMinutes += item.totalMinutes || 0;
+        monthTotalOvertimeMinutes += item.totalOvertime || 0;
+        const st = String(item._id || "").trim().toLowerCase();
+        if (st === "late") monthLateCount += item.count;
+      });
+
+      const monthTotalHours = Math.floor(monthTotalMinutes / 60);
+      const monthTotalHoursMins = monthTotalMinutes % 60;
+      const monthHoursDisplay = `${monthTotalHours}h ${String(monthTotalHoursMins).padStart(2, "0")}m`;
+
+      const monthOvertimeHours = Math.floor(monthTotalOvertimeMinutes / 60);
+      const monthOvertimeMins = monthTotalOvertimeMinutes % 60;
+      const monthOvertimeDisplay = `${monthOvertimeHours}h ${String(monthOvertimeMins).padStart(2, "0")}m`;
+
+      return sendSuccessResponse(res, "Admin attendance summary retrieved successfully", {
+        date: targetDate,
+        formattedDate: formattedToday,
+        month: monthLabel,
+        today: {
+          totalEmployees: totalEmployeesCount,
+          present: todayPresent + todayRegularized,
+          late: todayLate,
+          halfDay: todayHalfDay,
+          onLeave: todayOnLeave,
+          absent: todayAbsent,
+          regularized: todayRegularized,
+          attendanceRate: todayAttendanceRate,
+        },
+        monthly: {
+          month: monthLabel,
+          totalRecords: monthTotalRecords,
+          totalWorkHours: monthHoursDisplay,
+          totalOvertimeHours: monthOvertimeDisplay,
+          totalLateCount: monthLateCount,
+          pendingRegularizations: pendingRegularizationsCount,
+        },
+      });
+    } catch (error) {
+      console.error("Get Admin Attendance Summary Error:", error);
+      return sendErrorResponse(res, 500, "Failed to retrieve attendance summary", error);
+    }
+  }
+
+  static async updateAttendanceStatusByAdmin(req, res) {
+    try {
+      const { id } = req.params;
+      const {
+        status,
+        checkInTime,
+        checkOutTime,
+        notes,
+        date,
+      } = req.body;
+
+      if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        return sendBadRequestResponse(res, "Valid ID parameter is required");
+      }
+
+      const validStatuses = [
+        "Present",
+        "Late",
+        "Half Day",
+        "Absent",
+        "On Leave",
+        "Regularized",
+      ];
+
+      if (status && !validStatuses.includes(status)) {
+        return sendBadRequestResponse(
+          res,
+          `Invalid status. Allowed values: ${validStatuses.join(", ")}`
+        );
+      }
+
+      let attendance = await AttendanceModel.findById(id).populate({
+        path: "employee",
+        select: "name firstName lastName email employeeId avatarUrl",
+      });
+
+      let targetEmployee = null;
+
+      if (!attendance) {
+        targetEmployee = await UserModel.findById(id);
+        if (!targetEmployee) {
+          return sendNotFoundResponse(res, "Attendance record or employee not found");
+        }
+
+        const targetDate = date ? getNormalizedDateString(date) : getNormalizedDateString();
+        attendance = await AttendanceModel.findOne({
+          employee: targetEmployee._id,
+          date: targetDate,
+        });
+
+        if (!attendance) {
+          attendance = new AttendanceModel({
+            employee: targetEmployee._id,
+            date: targetDate,
+            formattedDate: formatDisplayDate(targetDate),
+            status: status || "Present",
+            shift: targetEmployee.shift || null,
+          });
+        }
+      } else {
+        targetEmployee = attendance.employee;
+      }
+
+      const oldStatus = attendance.status;
+      if (status) {
+        attendance.status = status;
+      }
+
+      const targetDate = attendance.date;
+
+      if (checkInTime) {
+        let parsedIn;
+        if (typeof checkInTime === "string" && (checkInTime.includes("AM") || checkInTime.includes("PM"))) {
+          parsedIn = combineDateAndTime(targetDate, checkInTime);
+          attendance.checkInTime = parsedIn;
+          attendance.checkInDisplay = checkInTime;
+        } else {
+          parsedIn = new Date(checkInTime);
+          attendance.checkInTime = parsedIn;
+          attendance.checkInDisplay = formatTimeDisplay(parsedIn);
+        }
+      }
+
+      if (checkOutTime) {
+        let parsedOut;
+        if (typeof checkOutTime === "string" && (checkOutTime.includes("AM") || checkOutTime.includes("PM"))) {
+          parsedOut = combineDateAndTime(targetDate, checkOutTime);
+          attendance.checkOutTime = parsedOut;
+          attendance.checkOutDisplay = checkOutTime;
+        } else {
+          parsedOut = new Date(checkOutTime);
+          attendance.checkOutTime = parsedOut;
+          attendance.checkOutDisplay = formatTimeDisplay(parsedOut);
+        }
+      }
+
+      if (attendance.checkInTime && attendance.checkOutTime) {
+        const inDate = new Date(attendance.checkInTime);
+        const outDate = new Date(attendance.checkOutTime);
+        const diffMs = outDate.getTime() - inDate.getTime();
+        const diffMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
+        attendance.totalWorkMinutes = diffMinutes;
+        const hrs = Math.floor(diffMinutes / 60);
+        const mins = diffMinutes % 60;
+        attendance.totalWorkHoursDisplay = `${hrs}h ${String(mins).padStart(2, "0")}m`;
+      }
+
+      if (notes !== undefined) {
+        attendance.notes = String(notes || "").trim();
+      }
+
+      attendance.isCheckInRegularized = true;
+
+      await attendance.save();
+
+      const populatedAttendance = await AttendanceModel.findById(attendance._id)
+        .populate({
+          path: "employee",
+          select: "name firstName lastName email employeeId avatarUrl designation",
+          populate: { path: "designation", select: "designationName" },
+        })
+        .populate("shift", "shiftName startTime endTime workHoursDisplay");
+
+      const empName =
+        targetEmployee?.name ||
+        `${targetEmployee?.firstName || ""} ${targetEmployee?.lastName || ""}`.trim() ||
+        "Employee";
+
+      await recordAuditLog(req, {
+        action: "UPDATE",
+        category: "Attendance",
+        description: `Admin updated attendance status from '${oldStatus}' to '${attendance.status}' for ${empName} on ${attendance.date}`,
+        targetResource: "Attendance",
+        diff: {
+          before: `Status: ${oldStatus}`,
+          after: `Status: ${attendance.status}, Notes: ${attendance.notes || "None"}`,
+        },
+      });
+
+      if (targetEmployee?._id) {
+        await notifyUser(targetEmployee._id, {
+          title: "Attendance Status Updated",
+          message: `Your attendance record for ${attendance.formattedDate || attendance.date} has been updated to '${attendance.status}' by Admin.`,
+          category: "Attendance",
+          type: "ATTENDANCE_STATUS_UPDATED",
+          referenceId: attendance._id,
+          referenceModel: "Attendance",
+        });
+      }
+
+      return sendSuccessResponse(res, "Attendance status updated successfully", populatedAttendance);
+    } catch (error) {
+      console.error("Update Attendance Status By Admin Error:", error);
+      return sendErrorResponse(res, 500, "Failed to update attendance status", error);
     }
   }
 }

@@ -10,6 +10,7 @@ import { uploadFile, deleteFileFromS3 } from "../middleware/imageupload.js";
 import bcrypt from "bcryptjs";
 import transporter from "../utils/Email.config.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
+import XLSX from "xlsx";
 
 const generateEmployeeId = async () => {
   const count = await UserModel.countDocuments({ role: "employee" });
@@ -1441,6 +1442,183 @@ export class EmployeeController {
       return res.status(500).json({
         success: false,
         message: "Failed to update employee status",
+        error: error.message,
+      });
+    }
+  }
+
+  static async exportEmployees(req, res) {
+    try {
+      const {
+        format = "csv",
+        status = "All",
+        department,
+        designation,
+        employmentType,
+        search,
+      } = req.query;
+
+      const filter = {
+        role: "employee",
+        isUserDeleted: { $ne: true },
+      };
+
+      if (status && status !== "All") {
+        filter.employeeStatus = new RegExp(`^${String(status).trim()}$`, "i");
+      }
+
+      if (department && mongoose.Types.ObjectId.isValid(department)) {
+        filter.department = new mongoose.Types.ObjectId(department);
+      }
+
+      if (designation && mongoose.Types.ObjectId.isValid(designation)) {
+        filter.designation = new mongoose.Types.ObjectId(designation);
+      }
+
+      if (employmentType && String(employmentType).trim()) {
+        filter.employmentType = new RegExp(`^${String(employmentType).trim()}$`, "i");
+      }
+
+      if (search && String(search).trim()) {
+        const rgx = new RegExp(String(search).trim(), "i");
+        filter.$or = [
+          { name: rgx },
+          { firstName: rgx },
+          { lastName: rgx },
+          { email: rgx },
+          { employeeId: rgx },
+          { phone: rgx },
+        ];
+      }
+
+      const employees = await UserModel.find(filter)
+        .select("-password -otp")
+        .populate("department", "departmentName")
+        .populate("designation", "designationName")
+        .populate("shift", "shiftName startTime endTime")
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const formatType = String(format || "csv").toLowerCase().trim();
+
+      const sanitize = (val) => {
+        if (val === null || val === undefined) return "";
+        return String(val).replace(/"/g, '""');
+      };
+
+      const mappedData = employees.map((emp) => {
+        const displayName =
+          emp.name ||
+          `${emp.firstName || ""} ${emp.lastName || ""}`.trim() ||
+          "Employee";
+
+        return {
+          "Employee ID": emp.employeeId || "N/A",
+          "Full Name": displayName,
+          "First Name": emp.firstName || "",
+          "Last Name": emp.lastName || "",
+          "Official Email": emp.email || "",
+          "Personal Email": emp.contactInfo?.personalEmail || "",
+          "Phone Number": emp.phone || emp.contactInfo?.mobileNumber || "",
+          "Department": emp.department?.departmentName || "General",
+          "Designation": emp.designation?.designationName || "Employee",
+          "Employment Type": emp.employmentType || "Full-time",
+          "Status": emp.employeeStatus || "Active",
+          "Joining Date": emp.joiningDate || "",
+          "Work Location": emp.workLocation || "",
+          "Salary": emp.salary || 0,
+          "Salary Type": emp.salaryType || "Monthly",
+          "Payment Method": emp.salaryDetails?.paymentMethod || "",
+          "Bank Name": emp.salaryDetails?.bankName || "",
+          "Account Number": emp.salaryDetails?.accountNumber || "",
+          "IFSC Code": emp.salaryDetails?.ifscCode || "",
+          "Gender": emp.gender || "",
+          "Date of Birth": emp.dateOfBirth || "",
+          "Blood Group": emp.bloodGroup || "",
+          "Marital Status": emp.maritalStatus || "",
+          "Nationality": emp.nationality || "Indian",
+          "Reporting Manager": emp.reportingManager || "",
+          "PAN Card": emp.documents?.panCard || "",
+          "Aadhaar Card": emp.documents?.aadhaarCard || "",
+          "Created Date": emp.createdAt ? new Date(emp.createdAt).toISOString().split("T")[0] : "",
+        };
+      });
+
+      if (formatType === "json") {
+        return res.status(200).json({
+          success: true,
+          message: "Employees exported successfully",
+          total: employees.length,
+          result: employees,
+        });
+      }
+
+      if (formatType === "xlsx" || formatType === "excel") {
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(mappedData);
+        XLSX.utils.book_append_sheet(wb, ws, "Employees");
+        const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename=employees-${Date.now()}.xlsx`
+        );
+        return res.status(200).send(buffer);
+      }
+
+      const headers = [
+        "Employee ID",
+        "Full Name",
+        "First Name",
+        "Last Name",
+        "Official Email",
+        "Personal Email",
+        "Phone Number",
+        "Department",
+        "Designation",
+        "Employment Type",
+        "Status",
+        "Joining Date",
+        "Work Location",
+        "Salary",
+        "Salary Type",
+        "Payment Method",
+        "Bank Name",
+        "Account Number",
+        "IFSC Code",
+        "Gender",
+        "Date of Birth",
+        "Blood Group",
+        "Marital Status",
+        "Nationality",
+        "Reporting Manager",
+        "PAN Card",
+        "Aadhaar Card",
+        "Created Date",
+      ];
+
+      const headerRow = headers.map((h) => `"${h}"`).join(",");
+      const dataRows = mappedData.map((row) =>
+        headers.map((h) => `"${sanitize(row[h])}"`).join(",")
+      );
+
+      const csvContent = [headerRow, ...dataRows].join("\n");
+
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=employees-${Date.now()}.csv`
+      );
+      return res.status(200).send(csvContent);
+    } catch (error) {
+      console.error("Export Employees Error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to export employees",
         error: error.message,
       });
     }

@@ -64,6 +64,8 @@ indexRouter.get("/getHomeDashboard", UserAuth, HomeController.getHomeDashboard);
 
 indexRouter.post("/addEmployee", UserAuth, adminAuth, employeeUploadFields, EmployeeController.addEmployee);
 indexRouter.get("/getAllEmployees", UserAuth, adminAuth, EmployeeController.getAllEmployees);
+indexRouter.get("/admin/employees/export", UserAuth, adminAuth, EmployeeController.exportEmployees);
+indexRouter.get("/employees/export", UserAuth, adminAuth, EmployeeController.exportEmployees);
 indexRouter.get("/getEmployeeById/:id", UserAuth, EmployeeController.getEmployeeById);
 indexRouter.patch("/updateEmployee/:id", UserAuth, adminAuth, employeeUploadFields, EmployeeController.updateEmployee);
 indexRouter.patch("/updateStatus/:id", UserAuth, adminAuth, EmployeeController.updateStatus);
@@ -132,6 +134,11 @@ indexRouter.post("/attendance/applyRegularization", UserAuth, AttendanceControll
 indexRouter.get("/attendance/myRegularizations", UserAuth, AttendanceController.getMyRegularizations);
 indexRouter.get("/attendance/regularizationInbox", UserAuth, adminAuth, AttendanceController.getRegularizationInbox);
 indexRouter.patch("/attendance/actionRegularization/:id", UserAuth, adminAuth, AttendanceController.actionRegularization);
+
+indexRouter.get("/attendance/admin/daily-report", UserAuth, adminAuth, AttendanceController.getAdminDailyReport);
+indexRouter.get("/attendance/admin/history", UserAuth, adminAuth, AttendanceController.getAdminHistory);
+indexRouter.get("/attendance/admin/summary", UserAuth, adminAuth, AttendanceController.getAdminSummary);
+indexRouter.patch("/attendance/admin/:id/status", UserAuth, adminAuth, AttendanceController.updateAttendanceStatusByAdmin);
 
 indexRouter.get("/pendingActions", UserAuth, adminAuth, PendingActionController.getPendingActions);
 indexRouter.patch("/pendingActions/action/:type/:id", UserAuth, adminAuth, PendingActionController.actionPendingRequest);
