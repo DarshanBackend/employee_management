@@ -168,6 +168,7 @@ indexRouter.get("/payroll/preRunCalculations", UserAuth, adminAuth, PayrollContr
 indexRouter.post("/payroll/executeMonthlyPayroll", UserAuth, adminAuth, PayrollController.executeMonthlyPayroll);
 indexRouter.get("/payroll/getAllPayrollRuns", UserAuth, adminAuth, PayrollController.getAllPayrollRuns);
 indexRouter.get("/payroll/getPayrollRunById/:id", UserAuth, adminAuth, PayrollController.getPayrollRunById);
+indexRouter.patch("/payroll/actionPayrollRun/:id", UserAuth, adminAuth, PayrollController.actionPayrollRun);
 
 indexRouter.get("/getExportFormOptions", UserAuth, ExportReportController.getExportFormOptions);
 indexRouter.get("/getRecentExports", UserAuth, ExportReportController.getRecentExports);

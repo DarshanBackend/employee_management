@@ -108,8 +108,18 @@ const PayslipSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Ready", "Generated", "Paid"],
+      enum: ["Ready", "Generated", "Paid", "Approved", "Rejected"],
       default: "Ready",
+    },
+    remarks: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    rejectionReason: {
+      type: String,
+      default: "",
+      trim: true,
     },
 
     bankDetails: {
@@ -192,8 +202,27 @@ const PayrollRunSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Draft", "Ready", "Completed"],
+      enum: ["Draft", "Ready", "Completed", "Approved", "Rejected"],
       default: "Completed",
+    },
+    remarks: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    rejectionReason: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    actionBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    actionAt: {
+      type: Date,
+      default: null,
     },
 
     executedBy: {

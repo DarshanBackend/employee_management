@@ -16,7 +16,60 @@ import {
   sendSuccessResponse,
   sendErrorResponse,
   sendBadRequestResponse,
+  sendNotFoundResponse,
 } from "../utils/Response.utils.js";
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const escapeRegex = (str = "") =>
+  String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const getPayrollDropdownOptions = async (selectedYear = null) => {
+  const currentYear = new Date().getFullYear();
+  const baseYear = selectedYear && !isNaN(Number(selectedYear)) ? Number(selectedYear) : currentYear;
+
+  const [activeDepartments, existingYears, existingCycles] = await Promise.all([
+    DepartmentModel.find({ isDeleted: false, status: "Active" })
+      .select("_id departmentName")
+      .sort({ departmentName: 1 })
+      .lean(),
+    PayrollRunModel.distinct("year"),
+    PayrollRunModel.distinct("cycle"),
+  ]);
+
+  const departments = [
+    { _id: "all", departmentName: "All Departments" },
+    ...activeDepartments.map((d) => ({
+      _id: d._id,
+      departmentName: d.departmentName,
+    })),
+  ];
+
+  const yearSet = new Set([currentYear - 1, currentYear, currentYear + 1, baseYear]);
+  (existingYears || []).forEach((y) => {
+    const num = Number(y);
+    if (!isNaN(num) && num > 1900) yearSet.add(num);
+  });
+  const years = Array.from(yearSet).sort((a, b) => b - a);
+
+  const cycleSet = new Set(MONTH_NAMES.map((m) => `${m} ${baseYear}`));
+  (existingCycles || []).forEach((c) => {
+    if (c && typeof c === "string" && c.trim()) {
+      cycleSet.add(c.trim());
+    }
+  });
+  const cycles = Array.from(cycleSet);
+
+  return {
+    departments,
+    months: MONTH_NAMES,
+    years,
+    cycles,
+  };
+};
 
 const getOrCreatePayrollSetting = async (userId = null) => {
   let settings = await PayrollSettingModel.findOne().populate(
@@ -843,12 +896,16 @@ export class PayrollController {
 
   static async executeMonthlyPayroll(req, res) {
     try {
-      const { cycle, month, year, departmentId } = req.body;
+      const {
+        cycle,
+        month,
+        year,
+        departmentId,
+        department,
+        search,
+      } = { ...req.query, ...req.body };
 
-      const monthNames = [
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
-      ];
+      const monthNames = MONTH_NAMES;
       const now = new Date();
       const currentMonthName = monthNames[now.getMonth()];
       const currentYearNum = now.getFullYear();
@@ -869,9 +926,42 @@ export class PayrollController {
       targetYear = targetYear || currentYearNum;
       const cycleName = `${targetMonth} ${targetYear}`;
 
+      const rawDept = departmentId || department || "";
+      const deptStr = String(rawDept).trim();
+      let resolvedDepartmentId = null;
+      let resolvedDepartmentName = "All Departments";
+
+      if (
+        deptStr &&
+        deptStr.toLowerCase() !== "all" &&
+        deptStr.toLowerCase() !== "all departments"
+      ) {
+        if (mongoose.Types.ObjectId.isValid(deptStr)) {
+          const foundDept = await DepartmentModel.findOne({
+            _id: deptStr,
+            isDeleted: false,
+          }).select("_id departmentName");
+          if (!foundDept) {
+            return sendBadRequestResponse(res, "Selected department not found");
+          }
+          resolvedDepartmentId = foundDept._id;
+          resolvedDepartmentName = foundDept.departmentName;
+        } else {
+          const foundDept = await DepartmentModel.findOne({
+            departmentName: new RegExp(`^${escapeRegex(deptStr)}$`, "i"),
+            isDeleted: false,
+          }).select("_id departmentName");
+          if (!foundDept) {
+            return sendBadRequestResponse(res, `Department '${deptStr}' not found`);
+          }
+          resolvedDepartmentId = foundDept._id;
+          resolvedDepartmentName = foundDept.departmentName;
+        }
+      }
+
       const existingRun = await PayrollRunModel.findOne({
         cycle: cycleName,
-        department: departmentId || null,
+        department: resolvedDepartmentId,
       });
 
       const employeeFilter = {
@@ -879,8 +969,19 @@ export class PayrollController {
         isUserDeleted: { $ne: true },
         employeeStatus: { $ne: "Terminated" },
       };
-      if (departmentId && mongoose.Types.ObjectId.isValid(departmentId)) {
-        employeeFilter.department = departmentId;
+      if (resolvedDepartmentId) {
+        employeeFilter.department = resolvedDepartmentId;
+      }
+
+      const trimmedSearch = search && typeof search === "string" ? search.trim() : "";
+      if (trimmedSearch) {
+        const searchRegex = new RegExp(escapeRegex(trimmedSearch), "i");
+        employeeFilter.$or = [
+          { name: searchRegex },
+          { firstName: searchRegex },
+          { lastName: searchRegex },
+          { employeeId: searchRegex },
+        ];
       }
 
       const employees = await UserModel.find(employeeFilter)
@@ -889,7 +990,10 @@ export class PayrollController {
         .populate("designation", "designationName");
 
       if (!employees || employees.length === 0) {
-        return sendBadRequestResponse(res, "No eligible employees found for this payroll cycle");
+        return sendBadRequestResponse(
+          res,
+          "No eligible employees found for the selected payroll filters"
+        );
       }
 
       const settings = await getOrCreatePayrollSetting(req.user?._id);
@@ -975,6 +1079,8 @@ export class PayrollController {
 
       let payrollRunDoc;
       if (existingRun) {
+        existingRun.department = resolvedDepartmentId;
+        existingRun.departmentName = resolvedDepartmentName;
         existingRun.grossTotal = grossTotal;
         existingRun.totalDeductions = totalDeductions;
         existingRun.netDisbursement = netDisbursement;
@@ -989,10 +1095,8 @@ export class PayrollController {
           cycle: cycleName,
           month: targetMonth,
           year: targetYear,
-          department: departmentId || null,
-          departmentName: departmentId
-            ? employees[0]?.department?.departmentName || "Department"
-            : "All Departments",
+          department: resolvedDepartmentId,
+          departmentName: resolvedDepartmentName,
           grossTotal,
           totalDeductions,
           netDisbursement,
@@ -1037,10 +1141,16 @@ export class PayrollController {
         referenceModel: "PayrollRun",
       }).catch(() => { });
 
+      const dropdowns = await getPayrollDropdownOptions(targetYear);
+      const payrollRunResponse = {
+        ...(payrollRunDoc.toObject ? payrollRunDoc.toObject() : payrollRunDoc),
+        dropdowns,
+      };
+
       return sendSuccessResponse(
         res,
         `Payroll for ${cycleName} generated successfully. ${payslips.length} payslips created.`,
-        payrollRunDoc
+        payrollRunResponse
       );
     } catch (error) {
       console.error("Execute Monthly Payroll Error:", error);
@@ -1272,24 +1382,240 @@ export class PayrollController {
 
   static async getAllPayrollRuns(req, res) {
     try {
-      const { page = 1, limit = 10 } = req.query;
-      const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+      const {
+        page = 1,
+        limit = 10,
+        search = "",
+        department,
+        departmentId,
+        cycle,
+        month,
+        year,
+        status,
+      } = req.query;
 
-      const [runs, total] = await Promise.all([
-        PayrollRunModel.find()
-          .select("-payslips")
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.max(1, parseInt(limit, 10) || 10);
+      const skip = (pageNum - 1) * limitNum;
+
+      const andConditions = [];
+      const payslipMatchConditions = [];
+
+      // Search by employee name or employeeId
+      const trimmedSearch = String(search || "").trim();
+      let searchRegex = null;
+      let matchedUserIdSet = new Set();
+
+      if (trimmedSearch) {
+        searchRegex = new RegExp(escapeRegex(trimmedSearch), "i");
+        const matchedUsers = await UserModel.find({
+          $or: [
+            { name: searchRegex },
+            { firstName: searchRegex },
+            { lastName: searchRegex },
+            { employeeId: searchRegex },
+          ],
+        })
+          .select("_id")
+          .lean();
+
+        const matchedUserIds = matchedUsers.map((u) => u._id);
+        matchedUserIdSet = new Set(matchedUserIds.map((id) => String(id)));
+
+        payslipMatchConditions.push({
+          $or: [
+            { name: searchRegex },
+            { employeeId: searchRegex },
+            ...(matchedUserIds.length > 0
+              ? [{ employee: { $in: matchedUserIds } }]
+              : []),
+          ],
+        });
+      }
+
+      // Filter by department (ID or name)
+      const deptParam = String(departmentId || department || "").trim();
+      let targetDeptId = null;
+      let targetDeptRegex = null;
+
+      if (
+        deptParam &&
+        deptParam.toLowerCase() !== "all" &&
+        deptParam.toLowerCase() !== "all departments"
+      ) {
+        if (mongoose.Types.ObjectId.isValid(deptParam)) {
+          targetDeptId = new mongoose.Types.ObjectId(deptParam);
+          const foundDept = await DepartmentModel.findOne({
+            _id: targetDeptId,
+            isDeleted: false,
+          })
+            .select("_id departmentName")
+            .lean();
+          if (foundDept?.departmentName) {
+            targetDeptRegex = new RegExp(`^${escapeRegex(foundDept.departmentName)}$`, "i");
+          }
+
+          payslipMatchConditions.push({
+            $or: [
+              { departmentId: targetDeptId },
+              ...(targetDeptRegex ? [{ department: targetDeptRegex }] : []),
+            ],
+          });
+        } else {
+          targetDeptRegex = new RegExp(`^${escapeRegex(deptParam)}$`, "i");
+          const foundDept = await DepartmentModel.findOne({
+            departmentName: targetDeptRegex,
+            isDeleted: false,
+          })
+            .select("_id departmentName")
+            .lean();
+
+          if (foundDept) {
+            targetDeptId = foundDept._id;
+          }
+
+          payslipMatchConditions.push({
+            $or: [
+              { department: targetDeptRegex },
+              ...(targetDeptId ? [{ departmentId: targetDeptId }] : []),
+            ],
+          });
+        }
+      }
+
+      if (payslipMatchConditions.length === 1) {
+        if (trimmedSearch) {
+          andConditions.push({ payslips: { $elemMatch: payslipMatchConditions[0] } });
+        } else {
+          // Department only: match run-level department OR payslip-level department
+          andConditions.push({
+            $or: [
+              ...(targetDeptId ? [{ department: targetDeptId }] : []),
+              ...(targetDeptRegex ? [{ departmentName: targetDeptRegex }] : []),
+              { payslips: { $elemMatch: payslipMatchConditions[0] } },
+            ],
+          });
+        }
+      } else if (payslipMatchConditions.length > 1) {
+        // Both search & department: same employee must match both
+        andConditions.push({
+          payslips: { $elemMatch: { $and: payslipMatchConditions } },
+        });
+      }
+
+      // Filter by cycle or month & year
+      const cycleParam = String(cycle || "").trim();
+      if (cycleParam && cycleParam.toLowerCase() !== "all") {
+        andConditions.push({
+          cycle: new RegExp(`^${escapeRegex(cycleParam)}$`, "i"),
+        });
+      } else {
+        const monthParam = String(month || "").trim();
+        if (monthParam && monthParam.toLowerCase() !== "all") {
+          andConditions.push({
+            month: new RegExp(`^${escapeRegex(monthParam)}$`, "i"),
+          });
+        }
+
+        const yearParam = String(year || "").trim();
+        if (yearParam && yearParam.toLowerCase() !== "all") {
+          const parsedYear = parseInt(yearParam, 10);
+          if (!isNaN(parsedYear)) {
+            andConditions.push({ year: parsedYear });
+          }
+        }
+      }
+
+      // Filter by status
+      const statusParam = String(status || "").trim();
+      if (statusParam && statusParam.toLowerCase() !== "all") {
+        andConditions.push({
+          status: new RegExp(`^${escapeRegex(statusParam)}$`, "i"),
+        });
+      }
+
+      const filter = andConditions.length > 0 ? { $and: andConditions } : {};
+
+      const [rawRuns, total, dropdowns] = await Promise.all([
+        PayrollRunModel.find(filter)
           .populate("executedBy", "name email")
+          .populate("actionBy", "name email")
+          .populate("payslips.employee", "name firstName lastName email employeeId avatarUrl phone")
           .sort({ createdAt: -1 })
           .skip(skip)
-          .limit(parseInt(limit, 10)),
-        PayrollRunModel.countDocuments(),
+          .limit(limitNum),
+        PayrollRunModel.countDocuments(filter),
+        getPayrollDropdownOptions(year),
       ]);
+
+      const runs = rawRuns.map((runDoc) => {
+        const runObj = runDoc.toObject();
+        const allPayslips = Array.isArray(runObj.payslips) ? runObj.payslips : [];
+
+        const filteredPayslips = allPayslips.filter((p) => {
+          const empUser = p.employee && typeof p.employee === "object" ? p.employee : null;
+          const empUserId = empUser ? String(empUser._id) : String(p.employee || "");
+
+          if (searchRegex) {
+            const matchesSearch =
+              searchRegex.test(p.name || "") ||
+              searchRegex.test(p.employeeId || "") ||
+              (empUser &&
+                (searchRegex.test(empUser.name || "") ||
+                  searchRegex.test(empUser.employeeId || ""))) ||
+              matchedUserIdSet.has(empUserId);
+            if (!matchesSearch) return false;
+          }
+
+          if (targetDeptId || targetDeptRegex) {
+            const matchesDept =
+              (targetDeptId && p.departmentId && String(p.departmentId) === String(targetDeptId)) ||
+              (targetDeptRegex && targetDeptRegex.test(p.department || ""));
+            if (!matchesDept) return false;
+          }
+
+          return true;
+        });
+
+        const formattedEmployees = filteredPayslips.map((p) => {
+          const empUser = p.employee && typeof p.employee === "object" ? p.employee : null;
+          return {
+            _id: p._id,
+            employee: empUser?._id || p.employee,
+            employeeId: p.employeeId || empUser?.employeeId || "",
+            name: p.name || empUser?.name || "",
+            email: empUser?.email || "",
+            phone: empUser?.phone || null,
+            avatarUrl: p.avatarUrl || empUser?.avatarUrl || null,
+            department: p.department || "General",
+            departmentId: p.departmentId || null,
+            designation: p.designation || "Employee",
+            grade: p.grade || "",
+            days: p.days || "22/22",
+            grossPay: p.grossPay || 0,
+            deductions: p.deductions?.totalDeductions ?? 0,
+            netPay: p.netPay || 0,
+            status: p.status || "Ready",
+            remarks: p.remarks || "",
+            rejectionReason: p.rejectionReason || "",
+            payoutDate: p.payoutDate || "",
+          };
+        });
+
+        return {
+          ...runObj,
+          payslips: filteredPayslips,
+          employees: formattedEmployees,
+          matchedEmployeesCount: formattedEmployees.length,
+        };
+      });
 
       return sendSuccessResponse(res, "Payroll runs fetched successfully", {
         total,
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
-        totalPages: Math.ceil(total / parseInt(limit, 10)),
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+        dropdowns,
         runs,
       });
     } catch (error) {
@@ -1301,14 +1627,168 @@ export class PayrollController {
   static async getPayrollRunById(req, res) {
     try {
       const { id } = req.params;
-      const run = await PayrollRunModel.findById(id).populate("executedBy", "name email");
+      const run = await PayrollRunModel.findById(id)
+        .populate("executedBy", "name email")
+        .populate("actionBy", "name email");
       if (!run) {
-        return sendBadRequestResponse(res, "Payroll run not found");
+        return sendNotFoundResponse(res, "Payroll run not found");
       }
       return sendSuccessResponse(res, "Payroll run details fetched successfully", run);
     } catch (error) {
       console.error("Get Payroll Run By ID Error:", error);
       return sendErrorResponse(res, 500, "Failed to fetch payroll run details", error);
+    }
+  }
+
+  static async actionPayrollRun(req, res) {
+    try {
+      const { id } = req.params;
+      const { action, status, remarks, reason, rejectionReason, employeeId } = req.body;
+
+      if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        return sendBadRequestResponse(res, "Valid payroll run ID is required");
+      }
+
+      const rawAction = String(action || status || "").trim().toLowerCase();
+      const acceptValues = ["accept", "accepted", "approve", "approved", "completed", "paid"];
+      const rejectValues = ["reject", "rejected"];
+
+      if (!acceptValues.includes(rawAction) && !rejectValues.includes(rawAction)) {
+        return sendBadRequestResponse(
+          res,
+          "Invalid action. Please provide action as 'accept' or 'reject'."
+        );
+      }
+
+      const isAccept = acceptValues.includes(rawAction);
+      const adminRemarks = String(remarks || reason || rejectionReason || "").trim();
+
+      const run = await PayrollRunModel.findById(id);
+      if (!run) {
+        return sendNotFoundResponse(res, "Payroll run not found");
+      }
+
+      // If employeeId is provided, update that specific employee's payslip inside the payroll run
+      if (employeeId) {
+        const targetPayslip = run.payslips.find(
+          (p) =>
+            String(p.employee) === String(employeeId) ||
+            String(p._id) === String(employeeId) ||
+            (p.employeeId && String(p.employeeId).toLowerCase() === String(employeeId).trim().toLowerCase())
+        );
+
+        if (!targetPayslip) {
+          return sendNotFoundResponse(res, "Employee payslip not found in this payroll run");
+        }
+
+        const prevPayslipStatus = targetPayslip.status;
+        targetPayslip.status = isAccept ? "Paid" : "Rejected";
+        targetPayslip.remarks = adminRemarks;
+        if (!isAccept) {
+          targetPayslip.rejectionReason = adminRemarks;
+        }
+
+        await run.save();
+
+        await recordAuditLog(req, {
+          action: `${isAccept ? "Accepted" : "Rejected"} Employee Payroll`,
+          category: "Payroll",
+          description: `${isAccept ? "Accepted" : "Rejected"} payroll for ${targetPayslip.name || "Employee"} (${run.cycle})`,
+          targetResource: `${run.cycle} - ${targetPayslip.name || employeeId}`,
+          diff: {
+            before: prevPayslipStatus,
+            after: targetPayslip.status,
+          },
+        });
+
+        notifyUser(targetPayslip.employee, {
+          title: `Payroll ${isAccept ? "Approved" : "Rejected"}`,
+          message: isAccept
+            ? `Your payroll for ${run.cycle} has been approved and marked as Paid. Net Pay: ₹${Number(targetPayslip.netPay || 0).toLocaleString("en-IN")}.`
+            : `Your payroll for ${run.cycle} has been rejected by Admin.${adminRemarks ? ` Reason: ${adminRemarks}` : ""}`,
+          category: "Payroll",
+          type: isAccept ? "PAYROLL_APPROVED" : "PAYROLL_REJECTED",
+          sender: req.user?._id,
+          referenceId: run._id,
+          referenceModel: "PayrollRun",
+        }).catch(() => { });
+
+        return sendSuccessResponse(
+          res,
+          `Employee payroll ${isAccept ? "accepted" : "rejected"} successfully`,
+          {
+            payrollRunId: run._id,
+            cycle: run.cycle,
+            payslip: targetPayslip,
+          }
+        );
+      }
+
+      // Otherwise, accept or reject the entire payroll run
+      const previousStatus = run.status;
+      run.status = isAccept ? "Completed" : "Rejected";
+      run.remarks = adminRemarks;
+      run.rejectionReason = isAccept ? "" : adminRemarks;
+      run.actionBy = req.user?._id || null;
+      run.actionAt = new Date();
+
+      if (isAccept) {
+        run.executedBy = req.user?._id || run.executedBy;
+        run.executedAt = new Date();
+      }
+
+      if (Array.isArray(run.payslips) && run.payslips.length > 0) {
+        run.payslips.forEach((p) => {
+          p.status = isAccept ? "Paid" : "Rejected";
+          if (adminRemarks) {
+            p.remarks = adminRemarks;
+            if (!isAccept) p.rejectionReason = adminRemarks;
+          }
+        });
+      }
+
+      await run.save();
+
+      await recordAuditLog(req, {
+        action: `${isAccept ? "Accepted" : "Rejected"} Payroll Run`,
+        category: "Payroll",
+        description: `${isAccept ? "Accepted" : "Rejected"} payroll run for ${run.cycle} (${run.totalEmployees} employees)`,
+        targetResource: run.cycle,
+        diff: {
+          before: previousStatus,
+          after: run.status,
+        },
+      });
+
+      if (Array.isArray(run.payslips)) {
+        for (const p of run.payslips) {
+          notifyUser(p.employee, {
+            title: `Payroll ${isAccept ? "Approved" : "Rejected"}`,
+            message: isAccept
+              ? `Your payroll for ${run.cycle} has been approved. Net Pay: ₹${Number(p.netPay || 0).toLocaleString("en-IN")}.`
+              : `Payroll run for ${run.cycle} was rejected by Admin.${adminRemarks ? ` Reason: ${adminRemarks}` : ""}`,
+            category: "Payroll",
+            type: isAccept ? "PAYROLL_APPROVED" : "PAYROLL_REJECTED",
+            sender: req.user?._id,
+            referenceId: run._id,
+            referenceModel: "PayrollRun",
+          }).catch(() => { });
+        }
+      }
+
+      const updatedRun = await PayrollRunModel.findById(run._id)
+        .select("-payslips")
+        .populate("executedBy", "name email")
+        .populate("actionBy", "name email");
+
+      return sendSuccessResponse(
+        res,
+        `Payroll run for ${run.cycle} ${isAccept ? "accepted" : "rejected"} successfully`,
+        updatedRun
+      );
+    } catch (error) {
+      console.error("Action Payroll Run Error:", error);
+      return sendErrorResponse(res, 500, "Failed to update payroll run status", error);
     }
   }
 }
