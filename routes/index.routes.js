@@ -136,6 +136,7 @@ indexRouter.get("/attendance/regularizationInbox", UserAuth, adminAuth, Attendan
 indexRouter.patch("/attendance/actionRegularization/:id", UserAuth, adminAuth, AttendanceController.actionRegularization);
 
 indexRouter.get("/attendance/admin/daily-report", UserAuth, adminAuth, AttendanceController.getAdminDailyReport);
+indexRouter.get("/attendance/admin/daily-report/:date", UserAuth, adminAuth, AttendanceController.getAdminDailyReport);
 indexRouter.get("/attendance/admin/history", UserAuth, adminAuth, AttendanceController.getAdminHistory);
 indexRouter.get("/attendance/admin/summary", UserAuth, adminAuth, AttendanceController.getAdminSummary);
 indexRouter.patch("/attendance/admin/:id/status", UserAuth, adminAuth, AttendanceController.updateAttendanceStatusByAdmin);

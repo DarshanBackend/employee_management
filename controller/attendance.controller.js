@@ -22,9 +22,67 @@ import {
   extractBreaksFromShift,
 } from "../services/breakTracker.service.js";
 
+// Helper: Parse flexible calendar date inputs (YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY, ISO, Date)
+export const parseCalendarDate = (inputDate) => {
+  if (!inputDate) {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
+  if (inputDate instanceof Date) {
+    if (isNaN(inputDate.getTime())) return null;
+    return new Date(inputDate.getFullYear(), inputDate.getMonth(), inputDate.getDate());
+  }
+
+  const raw = String(inputDate).trim();
+  if (!raw) {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
+  // Match YYYY-MM-DD or YYYY/MM/DD (also handles ISO prefix like 2026-11-18T00:00:00Z)
+  const ymdMatch = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:$|T|\s)/);
+  if (ymdMatch) {
+    const year = parseInt(ymdMatch[1], 10);
+    const month = parseInt(ymdMatch[2], 10);
+    const day = parseInt(ymdMatch[3], 10);
+    const d = new Date(year, month - 1, day);
+    if (
+      d.getFullYear() === year &&
+      d.getMonth() === month - 1 &&
+      d.getDate() === day
+    ) {
+      return d;
+    }
+    return null;
+  }
+
+  // Match DD-MM-YYYY or DD/MM/YYYY
+  const dmyMatch = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10);
+    const year = parseInt(dmyMatch[3], 10);
+    const d = new Date(year, month - 1, day);
+    if (
+      d.getFullYear() === year &&
+      d.getMonth() === month - 1 &&
+      d.getDate() === day
+    ) {
+      return d;
+    }
+    return null;
+  }
+
+  // Fallback for natural date strings like "18 Nov 2026"
+  const fallback = new Date(raw);
+  if (isNaN(fallback.getTime())) return null;
+  return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate());
+};
+
 // Helper: Format Date to YYYY-MM-DD
 export const getNormalizedDateString = (inputDate) => {
-  const d = inputDate ? new Date(inputDate) : new Date();
+  const d = parseCalendarDate(inputDate) || new Date();
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -33,7 +91,7 @@ export const getNormalizedDateString = (inputDate) => {
 
 // Helper: Format Date to "08 Oct 2026"
 export const formatDisplayDate = (inputDate) => {
-  const d = inputDate ? new Date(inputDate) : new Date();
+  const d = parseCalendarDate(inputDate) || new Date();
   const day = String(d.getDate()).padStart(2, "0");
   const monthNames = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -1993,6 +2051,10 @@ export class AttendanceController {
     try {
       const {
         date,
+        selectedDate,
+        day,
+        month,
+        year,
         status = "All",
         shift,
         search,
@@ -2002,8 +2064,47 @@ export class AttendanceController {
         sortOrder = "asc",
       } = req.query;
 
-      const targetDate = date ? getNormalizedDateString(date) : getNormalizedDateString();
-      const formattedToday = formatDisplayDate(targetDate);
+      const rawDateInput = req.params.date || date || selectedDate;
+      let parsedDateObj = null;
+
+      if (rawDateInput && String(rawDateInput).trim()) {
+        parsedDateObj = parseCalendarDate(rawDateInput);
+        if (!parsedDateObj) {
+          return sendBadRequestResponse(
+            res,
+            "Invalid date format. Please use YYYY-MM-DD or DD-MM-YYYY (e.g. 2026-11-18 or 18-11-2026)."
+          );
+        }
+      } else if (day && month && year) {
+        parsedDateObj = parseCalendarDate(`${year}-${month}-${day}`);
+        if (!parsedDateObj) {
+          return sendBadRequestResponse(
+            res,
+            "Invalid day, month, or year provided."
+          );
+        }
+      } else {
+        parsedDateObj = parseCalendarDate();
+      }
+
+      const targetDate = getNormalizedDateString(parsedDateObj);
+      const todayDateStr = getNormalizedDateString();
+      const formattedToday = formatDisplayDate(parsedDateObj);
+      const dayNames = [
+        "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+      ];
+      const prevDateObj = new Date(
+        parsedDateObj.getFullYear(),
+        parsedDateObj.getMonth(),
+        parsedDateObj.getDate() - 1
+      );
+      const nextDateObj = new Date(
+        parsedDateObj.getFullYear(),
+        parsedDateObj.getMonth(),
+        parsedDateObj.getDate() + 1
+      );
+      const targetMonthPrefix = targetDate.slice(0, 7); // YYYY-MM
+
       const pageNum = Math.max(1, parseInt(page, 10) || 1);
       const limitNum = Math.max(1, parseInt(limit, 10) || 10);
       const skip = (pageNum - 1) * limitNum;
@@ -2037,7 +2138,7 @@ export class AttendanceController {
 
       const employeeIds = allEmployees.map((e) => e._id);
 
-      const [attendances, leaves] = await Promise.all([
+      const [attendances, leaves, monthAttendanceDates] = await Promise.all([
         AttendanceModel.find({
           employee: { $in: employeeIds },
           date: targetDate,
@@ -2051,6 +2152,9 @@ export class AttendanceController {
           toDate: { $gte: targetDate },
           isDeleted: { $ne: true },
         }).lean(),
+        AttendanceModel.distinct("date", {
+          date: { $regex: `^${targetMonthPrefix}` },
+        }),
       ]);
 
       const attendanceMap = new Map();
@@ -2175,9 +2279,24 @@ export class AttendanceController {
       const totalFiltered = filteredRows.length;
       const paginatedRecords = filteredRows.slice(skip, skip + limitNum);
 
+      const sortedMonthDates = (monthAttendanceDates || []).filter(Boolean).sort();
+
       return sendSuccessResponse(res, "Daily attendance report retrieved successfully", {
         date: targetDate,
+        selectedDate: targetDate,
         formattedDate: formattedToday,
+        calendar: {
+          selectedDate: targetDate,
+          formattedDate: formattedToday,
+          dayOfWeek: dayNames[parsedDateObj.getDay()],
+          month: parsedDateObj.getMonth() + 1,
+          year: parsedDateObj.getFullYear(),
+          isToday: targetDate === todayDateStr,
+          isFutureDate: targetDate > todayDateStr,
+          previousDate: getNormalizedDateString(prevDateObj),
+          nextDate: getNormalizedDateString(nextDateObj),
+          datesWithAttendance: sortedMonthDates,
+        },
         summary: {
           totalEmployees: allEmployees.length,
           present: presentCount + regularizedCount,
