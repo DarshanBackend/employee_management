@@ -6,6 +6,7 @@ import ShiftModel from "../model/shift.model.js";
 import ShiftRosterModel from "../model/shiftRoster.model.js";
 import UserModel from "../model/user.model.js";
 import DesignationModel from "../model/designation.model.js";
+import AttendanceRuleModel from "../model/attendanceRule.model.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
 import { notifyAdmins, notifyUser } from "../utils/notification.util.js";
 import {
@@ -151,6 +152,27 @@ export const combineDateAndTime = (dateStr, timeStr) => {
   } catch (e) {
     return new Date();
   }
+};
+
+// Helper: Calculate overtime minutes based on total work minutes, required shift minutes, and attendance overtime rules
+export const calculateOvertimeMinutes = async (totalWorkMinutes, requiredWorkMinutes = 540) => {
+  if (!totalWorkMinutes || totalWorkMinutes <= requiredWorkMinutes) {
+    return 0;
+  }
+  const extraMinutes = totalWorkMinutes - requiredWorkMinutes;
+  try {
+    const rules = await AttendanceRuleModel.findOne().lean();
+    if (rules?.overtimeRules?.enableOvertimeTracking === false) {
+      return 0;
+    }
+    const minThreshold = rules?.overtimeRules?.minimumMinutesForOvertime ?? 30;
+    if (extraMinutes < minThreshold) {
+      return 0;
+    }
+  } catch (err) {
+    console.error("Error reading overtime rules:", err.message);
+  }
+  return extraMinutes;
 };
 
 // Helper: Evaluate shift timing status (handles normal daytime shifts and overnight night shifts like 11:00 PM to 07:00 AM)
@@ -821,6 +843,14 @@ export class AttendanceController {
       const hours = Math.floor(attendance.totalWorkMinutes / 60);
       const mins = attendance.totalWorkMinutes % 60;
       attendance.totalWorkHoursDisplay = `${hours}h ${String(mins).padStart(2, "0")}m`;
+
+      const reqMins =
+        attendance.requiredWorkMinutes ||
+        (activeShift?.durationHours ? activeShift.durationHours * 60 : 540);
+      attendance.overtimeMinutes = await calculateOvertimeMinutes(
+        attendance.totalWorkMinutes || elapsedMinutes,
+        reqMins
+      );
 
       if (isEarlyDepartureApproved) {
         attendance.isEarlyOutApproved = true;
@@ -2222,6 +2252,16 @@ export class AttendanceController {
         const effectiveCheckIn = checkInDisplay || "--:--";
         const effectiveCheckOut = checkOutDisplay || "--:--";
 
+        const reqMins =
+          att?.requiredWorkMinutes ||
+          (activeShift?.durationHours ? activeShift.durationHours * 60 : 540);
+        const effectiveOvertime =
+          overtimeMinutes > 0
+            ? overtimeMinutes
+            : checkOutDisplay && att?.totalWorkMinutes > reqMins
+              ? Math.max(0, att.totalWorkMinutes - reqMins)
+              : 0;
+
         return {
           _id: effectiveId,
           attendanceId: effectiveAttendanceId,
@@ -2231,7 +2271,7 @@ export class AttendanceController {
           checkInTime: effectiveCheckIn,
           checkOutTime: effectiveCheckOut,
           totalWorkHours,
-          overtimeMinutes,
+          overtimeMinutes: effectiveOvertime,
           isCheckInRegularized,
           isCheckOutRegularized,
           hasAttendanceRecord: Boolean(attendanceId),
@@ -2245,12 +2285,12 @@ export class AttendanceController {
           },
           shift: activeShift
             ? {
-                _id: activeShift._id,
-                shiftName: activeShift.shiftName,
-                startTime: activeShift.startTime,
-                endTime: activeShift.endTime,
-                workHoursDisplay: activeShift.workHoursDisplay || "9 Hours",
-              }
+              _id: activeShift._id,
+              shiftName: activeShift.shiftName,
+              startTime: activeShift.startTime,
+              endTime: activeShift.endTime,
+              workHoursDisplay: activeShift.workHoursDisplay || "9 Hours",
+            }
             : null,
         };
       });
@@ -2473,6 +2513,16 @@ export class AttendanceController {
           `${emp?.firstName || ""} ${emp?.lastName || ""}`.trim() ||
           "Employee";
 
+        const reqMins =
+          item.requiredWorkMinutes ||
+          (item.shift?.durationHours ? item.shift.durationHours * 60 : 540);
+        const computedOvertime =
+          item.overtimeMinutes && item.overtimeMinutes > 0
+            ? item.overtimeMinutes
+            : item.checkOutTime && item.totalWorkMinutes > reqMins
+              ? Math.max(0, item.totalWorkMinutes - reqMins)
+              : 0;
+
         return {
           _id: item._id,
           date: item.date,
@@ -2482,7 +2532,7 @@ export class AttendanceController {
           checkOutTime: item.checkOutDisplay || null,
           totalWorkHours: item.totalWorkHoursDisplay || "0h 00m",
           totalWorkMinutes: item.totalWorkMinutes || 0,
-          overtimeMinutes: item.overtimeMinutes || 0,
+          overtimeMinutes: computedOvertime,
           isCheckInRegularized: Boolean(item.isCheckInRegularized),
           isCheckOutRegularized: Boolean(item.isCheckOutRegularized),
           notes: item.notes || "",
@@ -2496,12 +2546,12 @@ export class AttendanceController {
           },
           shift: item.shift
             ? {
-                _id: item.shift._id,
-                shiftName: item.shift.shiftName,
-                startTime: item.shift.startTime,
-                endTime: item.shift.endTime,
-                workHoursDisplay: item.shift.workHoursDisplay || "9 Hours",
-              }
+              _id: item.shift._id,
+              shiftName: item.shift.shiftName,
+              startTime: item.shift.startTime,
+              endTime: item.shift.endTime,
+              workHoursDisplay: item.shift.workHoursDisplay || "9 Hours",
+            }
             : null,
           createdAt: item.createdAt,
         };
@@ -2796,6 +2846,9 @@ export class AttendanceController {
         const hrs = Math.floor(diffMinutes / 60);
         const mins = diffMinutes % 60;
         attendance.totalWorkHoursDisplay = `${hrs}h ${String(mins).padStart(2, "0")}m`;
+
+        const reqMins = attendance.requiredWorkMinutes || 540;
+        attendance.overtimeMinutes = await calculateOvertimeMinutes(diffMinutes, reqMins);
       }
 
       if (notes !== undefined) {
