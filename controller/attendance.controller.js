@@ -2217,18 +2217,24 @@ export class AttendanceController {
           `${emp.firstName || ""} ${emp.lastName || ""}`.trim() ||
           "Employee";
 
+        const effectiveId = attendanceId || emp._id;
+        const effectiveAttendanceId = attendanceId || emp._id;
+        const effectiveCheckIn = checkInDisplay || "--:--";
+        const effectiveCheckOut = checkOutDisplay || "--:--";
+
         return {
-          _id: attendanceId,
-          attendanceId,
+          _id: effectiveId,
+          attendanceId: effectiveAttendanceId,
           date: targetDate,
           formattedDate: formattedToday,
           status: finalStatus,
-          checkInTime: checkInDisplay,
-          checkOutTime: checkOutDisplay,
+          checkInTime: effectiveCheckIn,
+          checkOutTime: effectiveCheckOut,
           totalWorkHours,
           overtimeMinutes,
           isCheckInRegularized,
           isCheckOutRegularized,
+          hasAttendanceRecord: Boolean(attendanceId),
           employee: {
             _id: emp._id,
             employeeId: emp.employeeId || "N/A",
