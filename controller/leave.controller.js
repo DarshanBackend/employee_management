@@ -381,23 +381,46 @@ export class LeaveController {
         targetResource: `${formattedFromDate} to ${formattedToDate} - ${leaveTypeDoc.leaveTypeName}`,
       });
 
+      const empUser = await UserModel.findById(employeeId)
+        .select("name firstName lastName employeeId avatarUrl email department")
+        .populate("department", "departmentName")
+        .lean();
+
       const empName =
+        empUser?.name ||
+        `${empUser?.firstName || ""} ${empUser?.lastName || ""}`.trim() ||
         req.user?.name ||
-        `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
         req.user?.employeeId ||
         "Employee";
 
-      await notifyAdmins({
+      const deptName = empUser?.department?.departmentName ? ` (${empUser.department.departmentName})` : "";
+
+      // 1. Send Notification to all Admins (In-app + FCM Push)
+      notifyAdmins({
         title: "New Leave Application",
-        message: `${empName} applied for ${totalDays} day(s) ${leaveTypeDoc.leaveTypeName} (${formattedFromDate} to ${formattedToDate}).`,
+        message: `${empName}${deptName} has applied for ${totalDays} day(s) ${leaveTypeDoc.leaveTypeName} (${formattedFromDate} to ${formattedToDate}). Reason: "${String(reason).trim()}"`,
         category: "Leave",
         type: "LEAVE_APPLIED",
         sender: employeeId,
         senderName: empName,
-        senderAvatar: req.user?.avatarUrl || null,
+        senderAvatar: empUser?.avatarUrl || req.user?.avatarUrl || null,
         referenceId: newLeave._id,
         referenceModel: "Leave",
-      });
+      }).catch((err) => console.error("Notify Admins Error on Apply Leave:", err.message));
+
+      // 2. Send Confirmation Notification to the Employee (In-app + FCM Push)
+      notifyUser(employeeId, {
+        title: initialStatus === "Approved" ? "Leave Application Auto-Approved 🎉" : "Leave Application Submitted",
+        message: initialStatus === "Approved"
+          ? `Your leave application for ${totalDays} day(s) ${leaveTypeDoc.leaveTypeName} (${formattedFromDate} to ${formattedToDate}) has been automatically approved.`
+          : `Your leave application for ${totalDays} day(s) ${leaveTypeDoc.leaveTypeName} (${formattedFromDate} to ${formattedToDate}) has been submitted successfully and is awaiting Admin review.`,
+        category: "Leave",
+        type: initialStatus === "Approved" ? "LEAVE_APPROVED" : "LEAVE_SUBMITTED",
+        sender: employeeId,
+        senderName: "System",
+        referenceId: newLeave._id,
+        referenceModel: "Leave",
+      }).catch((err) => console.error("Notify Employee Error on Apply Leave:", err.message));
 
       const populated = await LeaveModel.findById(newLeave._id)
         .populate("employee", "name firstName lastName employeeId avatarUrl email department designation")
@@ -749,19 +772,23 @@ export class LeaveController {
 
   /**
    * Admin: Approve or Reject Leave Application ("Accept ya to Reject")
-   * PATCH /api/leave/action/:id or PATCH /api/actionLeave/:id
+   * PATCH /api/actionLeave/:id or PATCH /api/action/leaves/:id or PATCH /api/action/leaves
    */
   static async actionLeave(req, res) {
     try {
-      const { id } = req.params;
-      const { action, adminRemarks = "", managerNote = "", rejectionReason = "" } = req.body;
+      const { id: paramId } = req.params;
+      const { id: bodyId, leaveId, action, status, adminRemarks = "", managerNote = "", rejectionReason = "" } = req.body;
+      const id = paramId || bodyId || leaveId;
 
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        return sendBadRequestResponse(res, "Invalid leave ID");
+      if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        return sendBadRequestResponse(res, "Valid leave ID is required");
       }
 
-      const normalizedAction = String(action).trim().toLowerCase();
-      if (!["approve", "accept", "reject"].includes(normalizedAction)) {
+      const rawAction = String(action || status || "").trim().toLowerCase();
+      const approveKeywords = ["approve", "approved", "accept", "accepted"];
+      const rejectKeywords = ["reject", "rejected"];
+
+      if (!approveKeywords.includes(rawAction) && !rejectKeywords.includes(rawAction)) {
         return sendBadRequestResponse(
           res,
           "Action must be either 'approve' (or 'accept') or 'reject'!"
@@ -780,7 +807,7 @@ export class LeaveController {
         );
       }
 
-      const isApprove = normalizedAction === "approve" || normalizedAction === "accept";
+      const isApprove = approveKeywords.includes(rawAction);
       const remarks = adminRemarks || managerNote || "";
 
       if (isApprove) {
@@ -841,9 +868,17 @@ export class LeaveController {
         `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
         "Admin";
 
-      await notifyUser(leave.employee?._id || leave.employee, {
-        title: `Leave Application ${isApprove ? "Approved" : "Rejected"}`,
-        message: `Your ${leave.leaveTypeName} application (${leave.formattedFromDate} to ${leave.formattedToDate}) has been ${isApprove ? "approved" : "rejected"} by ${adminActionName}.${!isApprove && leave.rejectionReason ? ` Reason: ${leave.rejectionReason}` : ""}`,
+      const finalRemarks = remarks || rejectionReason || leave.rejectionReason || "";
+      const remarksText = finalRemarks ? ` Reason/Remarks: "${finalRemarks.trim()}".` : "";
+
+      const employeeTargetId = leave.employee?._id || leave.employee;
+
+      // 🌟 Send Notification to the Employee (In-app + FCM Push) 🌟
+      notifyUser(employeeTargetId, {
+        title: isApprove ? "Leave Application Approved 🎉" : "Leave Application Rejected",
+        message: isApprove
+          ? `Your ${leave.leaveTypeName} application (${leave.formattedFromDate} to ${leave.formattedToDate}) has been approved by ${adminActionName}.${remarksText}`
+          : `Your ${leave.leaveTypeName} application (${leave.formattedFromDate} to ${leave.formattedToDate}) has been rejected by ${adminActionName}.${remarksText}`.trim(),
         category: "Leave",
         type: isApprove ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
         sender: req.user?._id,
@@ -851,7 +886,7 @@ export class LeaveController {
         senderAvatar: req.user?.avatarUrl || null,
         referenceId: leave._id,
         referenceModel: "Leave",
-      });
+      }).catch((err) => console.error("Notify Employee Error on Action Leave:", err.message));
 
       return sendSuccessResponse(
         res,

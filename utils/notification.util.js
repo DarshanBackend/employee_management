@@ -48,6 +48,7 @@ export const createNotification = async ({
   type = "GENERAL",
   referenceId = null,
   referenceModel = null,
+  skipPush = false,
 }) => {
   try {
     const targetRecipient = recipient || recipientId;
@@ -73,13 +74,17 @@ export const createNotification = async ({
       formattedTime: "Just now",
     });
 
-    const user = await UserModel.findById(targetRecipient).select("fcmToken").lean();
-    if (user?.fcmToken) {
-      sendPushNotification(user.fcmToken, title, message, {
-        notificationId: String(doc._id),
-        category: validCategory,
-        type,
-      }).catch((err) => console.error("FCM Push Error:", err.message));
+    if (!skipPush) {
+      const user = await UserModel.findById(targetRecipient).select("fcmToken").lean();
+      if (user?.fcmToken) {
+        sendPushNotification(user.fcmToken, title, message, {
+          notificationId: String(doc._id),
+          category: validCategory,
+          type,
+          referenceId: referenceId ? String(referenceId) : "",
+          referenceModel: referenceModel ? String(referenceModel) : "",
+        }).catch((err) => console.error("FCM Push Error:", err.message));
+      }
     }
 
     return doc;
@@ -125,6 +130,7 @@ export const notifyAdmins = async (options) => {
       const doc = await createNotification({
         ...options,
         recipient: adm._id,
+        skipPush: true,
       });
       if (doc) results.push(doc);
       if (adm.fcmToken) tokens.push(adm.fcmToken);
@@ -134,6 +140,8 @@ export const notifyAdmins = async (options) => {
       sendMulticastNotification(tokens, options.title, options.message, {
         category: options.category || "System",
         type: options.type || "GENERAL",
+        referenceId: options.referenceId ? String(options.referenceId) : "",
+        referenceModel: options.referenceModel ? String(options.referenceModel) : "",
       }).catch((err) => console.error("Admin FCM Multicast Error:", err.message));
     }
 

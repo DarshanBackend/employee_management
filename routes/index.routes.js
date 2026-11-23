@@ -100,6 +100,8 @@ indexRouter.patch("/updateLeavePolicy/:id", UserAuth, adminAuth, LeavePolicyCont
 indexRouter.delete("/deleteLeavePolicy/:id", UserAuth, adminAuth, LeavePolicyController.deleteLeavePolicy);
 
 indexRouter.post("/applyLeave", UserAuth, LeaveController.applyLeave);
+indexRouter.post("/leave/apply", UserAuth, LeaveController.applyLeave);
+indexRouter.post("/leave/applyLeave", UserAuth, LeaveController.applyLeave);
 indexRouter.get("/getMyLeaves", UserAuth, LeaveController.getMyLeaves);
 indexRouter.get("/getLeaveBalances", UserAuth, LeaveController.getMyLeaveBalances);
 indexRouter.delete("/cancelLeave/:id", UserAuth, LeaveController.cancelLeave);
@@ -107,6 +109,19 @@ indexRouter.get("/getLeaveById/:id", UserAuth, LeaveController.getLeaveById);
 
 indexRouter.get("/getAllLeaves", UserAuth, adminAuth, LeaveController.getAllLeaves);
 indexRouter.patch("/actionLeave/:id", UserAuth, adminAuth, LeaveController.actionLeave);
+indexRouter.patch("/actionLeave", UserAuth, adminAuth, LeaveController.actionLeave);
+indexRouter.post("/actionLeave/:id", UserAuth, adminAuth, LeaveController.actionLeave);
+indexRouter.post("/actionLeave", UserAuth, adminAuth, LeaveController.actionLeave);
+
+indexRouter.patch("/action/leaves/:id", UserAuth, adminAuth, LeaveController.actionLeave);
+indexRouter.patch("/action/leaves", UserAuth, adminAuth, LeaveController.actionLeave);
+indexRouter.post("/action/leaves/:id", UserAuth, adminAuth, LeaveController.actionLeave);
+indexRouter.post("/action/leaves", UserAuth, adminAuth, LeaveController.actionLeave);
+
+indexRouter.patch("/action/leave/:id", UserAuth, adminAuth, LeaveController.actionLeave);
+indexRouter.patch("/action/leave", UserAuth, adminAuth, LeaveController.actionLeave);
+indexRouter.patch("/leave/action/:id", UserAuth, adminAuth, LeaveController.actionLeave);
+indexRouter.patch("/leave/action", UserAuth, adminAuth, LeaveController.actionLeave);
 
 indexRouter.post("/addHoliday", UserAuth, adminAuth, HolidayController.addHoliday);
 indexRouter.get("/getAllHolidays", UserAuth, HolidayController.getAllHolidays);
