@@ -234,14 +234,12 @@ indexRouter.patch("/admin/profileUpdateRequest/:id", UserAuth, adminAuth, Profil
 
 indexRouter.get("/user/myRequestsHub", UserAuth, RequestHubController.getMyRequestsHub);
 indexRouter.post("/user/submitExpenseRequest", UserAuth, RequestHubController.submitExpenseRequest);
-indexRouter.post("/submitExpenseRequest", UserAuth, RequestHubController.submitExpenseRequest);
 indexRouter.delete("/user/cancelRequest/:category/:id", UserAuth, RequestHubController.cancelRequest);
 
 indexRouter.post("/createAnnouncement", UserAuth, adminAuth, AnnouncementController.createAnnouncement);
 indexRouter.get("/getCompanyAnnouncements", UserAuth, AnnouncementController.getCompanyAnnouncements);
 indexRouter.get("/admin/announcements", UserAuth, adminAuth, AnnouncementController.getAllAnnouncements);
 indexRouter.get("/getRecipientOptions", UserAuth, AnnouncementController.getRecipientOptions);
-indexRouter.get("/getAnnouncementById", UserAuth, AnnouncementController.getAnnouncementById);
 indexRouter.get("/getAnnouncementById/:id", UserAuth, AnnouncementController.getAnnouncementById);
 indexRouter.patch("/updateAnnouncement/:id", UserAuth, adminAuth, AnnouncementController.updateAnnouncement);
 indexRouter.delete("/deleteAnnouncement/:id", UserAuth, adminAuth, AnnouncementController.deleteAnnouncement);

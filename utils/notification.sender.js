@@ -104,8 +104,8 @@ export const sendPushNotification = async (token, title, body, data = {}) => {
         if (error.code === 'messaging/registration-token-not-registered') {
             console.warn("Token is invalid/expired. Clearing invalid token from DB:", token.substring(0, 25));
             import('../model/user.model.js').then(({ default: UserModel }) => {
-                UserModel.updateMany({ fcmToken: token }, { fcmToken: null }).catch(() => {});
-            }).catch(() => {});
+                UserModel.updateMany({ fcmToken: token }, { fcmToken: null }).catch(() => { });
+            }).catch(() => { });
             return { success: false, code: 'INVALID_TOKEN', error: error.message };
         }
         if (error.code === 'messaging/invalid-argument') {
@@ -198,8 +198,8 @@ export const sendMulticastNotification = async (tokens, title, body, data = {}) 
                         console.warn(`Failed token: ${failedTok?.substring(0, 20)}... | Error: ${resp.error?.code} - ${resp.error?.message}`);
                         if (resp.error?.code === 'messaging/registration-token-not-registered') {
                             import('../model/user.model.js').then(({ default: UserModel }) => {
-                                UserModel.updateMany({ fcmToken: failedTok }, { fcmToken: null }).catch(() => {});
-                            }).catch(() => {});
+                                UserModel.updateMany({ fcmToken: failedTok }, { fcmToken: null }).catch(() => { });
+                            }).catch(() => { });
                         }
                     }
                 });

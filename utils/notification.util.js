@@ -77,13 +77,17 @@ export const createNotification = async ({
     if (!skipPush) {
       const user = await UserModel.findById(targetRecipient).select("fcmToken").lean();
       if (user?.fcmToken) {
-        sendPushNotification(user.fcmToken, title, message, {
-          notificationId: String(doc._id),
-          category: validCategory,
-          type,
-          referenceId: referenceId ? String(referenceId) : "",
-          referenceModel: referenceModel ? String(referenceModel) : "",
-        }).catch((err) => console.error("FCM Push Error:", err.message));
+        try {
+          await sendPushNotification(user.fcmToken, title, message, {
+            notificationId: String(doc._id),
+            category: validCategory,
+            type,
+            referenceId: referenceId ? String(referenceId) : "",
+            referenceModel: referenceModel ? String(referenceModel) : "",
+          });
+        } catch (pushErr) {
+          console.error("FCM Push Error:", pushErr.message);
+        }
       }
     }
 
@@ -137,12 +141,30 @@ export const notifyAdmins = async (options) => {
     }
 
     if (tokens.length > 0) {
-      sendMulticastNotification(tokens, options.title, options.message, {
-        category: options.category || "System",
-        type: options.type || "GENERAL",
-        referenceId: options.referenceId ? String(options.referenceId) : "",
-        referenceModel: options.referenceModel ? String(options.referenceModel) : "",
-      }).catch((err) => console.error("Admin FCM Multicast Error:", err.message));
+      const uniqueTokens = [...new Set(tokens.filter(t => t && typeof t === "string" && t.trim().length > 0))];
+      if (uniqueTokens.length === 1) {
+        try {
+          await sendPushNotification(uniqueTokens[0], options.title, options.message, {
+            category: options.category || "System",
+            type: options.type || "GENERAL",
+            referenceId: options.referenceId ? String(options.referenceId) : "",
+            referenceModel: options.referenceModel ? String(options.referenceModel) : "",
+          });
+        } catch (err) {
+          console.error("Admin FCM Push Error:", err.message);
+        }
+      } else if (uniqueTokens.length > 1) {
+        try {
+          await sendMulticastNotification(uniqueTokens, options.title, options.message, {
+            category: options.category || "System",
+            type: options.type || "GENERAL",
+            referenceId: options.referenceId ? String(options.referenceId) : "",
+            referenceModel: options.referenceModel ? String(options.referenceModel) : "",
+          });
+        } catch (err) {
+          console.error("Admin FCM Multicast Error:", err.message);
+        }
+      }
     }
 
     return results;
