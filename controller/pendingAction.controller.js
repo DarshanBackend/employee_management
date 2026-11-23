@@ -460,23 +460,54 @@ export class PendingActionController {
   static async actionPendingRequest(req, res) {
     try {
       const { type, id } = req.params;
-      const { action, remarks = "", reason = "" } = req.body;
+      const {
+        action,
+        status,
+        remarks = "",
+        reason = "",
+        adminRemarks: bodyRemarks = "",
+        managerNote = "",
+        rejectionReason = "",
+        id: bodyId,
+        leaveId,
+      } = req.body;
 
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        return sendBadRequestResponse(res, "Invalid request ID");
+      const targetId = id || bodyId || leaveId;
+
+      if (!targetId || !mongoose.Types.ObjectId.isValid(targetId)) {
+        return sendBadRequestResponse(res, "Valid request ID is required");
       }
 
-      const normalizedAction = String(action || "").trim().toLowerCase();
-      if (!["approve", "accept", "reject"].includes(normalizedAction)) {
-        return sendBadRequestResponse(res, "Action must be either 'approve' or 'reject'!");
+      const rawAction = String(action || status || "").trim().toLowerCase();
+      const approveKeywords = ["approve", "approved", "accept", "accepted"];
+      const rejectKeywords = ["reject", "rejected"];
+
+      if (!approveKeywords.includes(rawAction) && !rejectKeywords.includes(rawAction)) {
+        return sendBadRequestResponse(
+          res,
+          "Action must be either 'approve' (or 'accept') or 'reject'!"
+        );
       }
 
-      const isApprove = normalizedAction === "approve" || normalizedAction === "accept";
-      const adminRemarks = remarks || reason || (isApprove ? "Approved by administrator" : "Rejected by administrator");
+      const isApprove = approveKeywords.includes(rawAction);
+      const adminRemarks =
+        remarks ||
+        reason ||
+        bodyRemarks ||
+        managerNote ||
+        rejectionReason ||
+        (isApprove ? "Approved by administrator." : "Rejected by administrator.");
       const normalizedType = String(type || "").trim().toLowerCase();
 
-      if (normalizedType === "leaves" || normalizedType === "leave") {
-        const leave = await LeaveModel.findById(id).populate("employee").populate("leaveType");
+      if (
+        normalizedType === "leaves" ||
+        normalizedType === "leave" ||
+        normalizedType === "leaverequests" ||
+        normalizedType === "leave_requests"
+      ) {
+        const leave = await LeaveModel.findById(targetId)
+          .populate("employee")
+          .populate("leaveType");
         if (!leave) {
           return sendNotFoundResponse(res, "Leave application not found");
         }
@@ -488,6 +519,21 @@ export class PendingActionController {
           );
         }
 
+        const targetEmployeeId = leave.employee?._id || leave.employee;
+        const targetEmployeeName =
+          leave.employee?.name ||
+          `${leave.employee?.firstName || ""} ${leave.employee?.lastName || ""}`.trim() ||
+          "Employee";
+        const leaveName =
+          leave.leaveTypeName ||
+          leave.leaveType?.leaveTypeName ||
+          "Leave";
+        const fromDateStr = leave.formattedFromDate || leave.fromDate || "";
+        const toDateStr = leave.formattedToDate || leave.toDate || "";
+        const dateRangeStr = fromDateStr
+          ? (fromDateStr === toDateStr ? ` for ${fromDateStr}` : ` (${fromDateStr} to ${toDateStr})`)
+          : "";
+
         if (isApprove) {
           leave.status = "Approved";
           leave.adminRemarks = adminRemarks;
@@ -495,16 +541,16 @@ export class PendingActionController {
           leave.actionAt = new Date();
 
           const todayStr = getNormalizedDateString();
-          if (leave.fromDate <= todayStr && leave.toDate >= todayStr) {
+          if (leave.fromDate <= todayStr && leave.toDate >= todayStr && targetEmployeeId) {
             let attendance = await AttendanceModel.findOne({
-              employee: leave.employee._id,
+              employee: targetEmployeeId,
               date: todayStr,
             });
 
             const leaveStatus = leave.isHalfDay ? "Half Day" : "On Leave";
             if (!attendance) {
               attendance = new AttendanceModel({
-                employee: leave.employee._id,
+                employee: targetEmployeeId,
                 date: todayStr,
                 formattedDate: formatDisplayDate(new Date(todayStr)),
                 status: leaveStatus,
@@ -529,19 +575,35 @@ export class PendingActionController {
         await recordAuditLog(req, {
           action: `${isApprove ? "Approved" : "Rejected"} Leave Application`,
           category: "Leave Management",
-          description: `${isApprove ? "Approved" : "Rejected"} ${leave.leaveTypeName} for ${leave.employee?.name || "Employee"}`,
-          targetResource: `${leave.employee?.name || "Employee"} - ${leave.leaveTypeName}`,
+          description: `${isApprove ? "Approved" : "Rejected"} ${leave.leaveTypeName} for ${targetEmployeeName}`,
+          targetResource: `${targetEmployeeName} - ${leave.leaveTypeName}`,
         });
 
-        await notifyUser(leave.employee?._id || leave.employee, {
-          title: `Leave Application ${isApprove ? "Approved" : "Rejected"}`,
-          message: `Your ${leave.leaveTypeName || "leave"} application has been ${isApprove ? "approved" : "rejected"} by Admin.${!isApprove && adminRemarks ? ` Reason: ${adminRemarks}` : ""}`,
-          category: "Leave",
-          type: isApprove ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
-          sender: req.user?._id,
-          referenceId: leave._id,
-          referenceModel: "Leave",
-        }).catch(() => { });
+        const adminActionName =
+          req.user?.name ||
+          `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
+          "Admin";
+        const remarksText = adminRemarks ? ` Reason/Remarks: "${adminRemarks.trim()}".` : "";
+
+        if (targetEmployeeId) {
+          try {
+            await notifyUser(targetEmployeeId, {
+              title: isApprove ? "Leave Application Approved 🎉" : "Leave Application Rejected",
+              message: isApprove
+                ? `Your ${leaveName} application${dateRangeStr} has been approved by ${adminActionName}.${remarksText}`
+                : `Your ${leaveName} application${dateRangeStr} has been rejected by ${adminActionName}.${remarksText}`.trim(),
+              category: "Leave",
+              type: isApprove ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
+              sender: req.user?._id,
+              senderName: adminActionName,
+              senderAvatar: req.user?.avatarUrl || null,
+              referenceId: leave._id,
+              referenceModel: "Leave",
+            });
+          } catch (notifErr) {
+            console.error("Pending action leave notification error:", notifErr);
+          }
+        }
 
         return sendSuccessResponse(
           res,
@@ -793,7 +855,13 @@ export class PendingActionController {
       let approvedPayroll = 0;
 
       if (activeCategory === "all" || activeCategory === "leaves") {
-        const pendingLeaves = await LeaveModel.find({ status: "Pending" });
+        const pendingLeaves = await LeaveModel.find({ status: "Pending" })
+          .populate("employee")
+          .populate("leaveType");
+        const adminActionName =
+          req.user?.name ||
+          `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
+          "Admin";
         for (const lv of pendingLeaves) {
           lv.status = "Approved";
           lv.adminRemarks = remarks;
@@ -802,12 +870,25 @@ export class PendingActionController {
           await lv.save();
           approvedLeaves++;
 
-          notifyUser(lv.employee, {
-            title: "Leave Application Approved",
-            message: `Your ${lv.leaveTypeName || "leave"} application has been approved by Admin.`,
+          const leaveName =
+            lv.leaveTypeName ||
+            lv.leaveType?.leaveTypeName ||
+            "Leave";
+          const fromDateStr = lv.formattedFromDate || lv.fromDate || "";
+          const toDateStr = lv.formattedToDate || lv.toDate || "";
+          const dateRangeStr = fromDateStr
+            ? (fromDateStr === toDateStr ? ` for ${fromDateStr}` : ` (${fromDateStr} to ${toDateStr})`)
+            : "";
+          const remarksText = remarks ? ` Remarks: "${remarks.trim()}".` : "";
+
+          notifyUser(lv.employee?._id || lv.employee, {
+            title: "Leave Application Approved 🎉",
+            message: `Your ${leaveName} application${dateRangeStr} has been approved by ${adminActionName}.${remarksText}`,
             category: "Leave",
             type: "LEAVE_APPROVED",
             sender: req.user?._id,
+            senderName: adminActionName,
+            senderAvatar: req.user?.avatarUrl || null,
             referenceId: lv._id,
             referenceModel: "Leave",
           }).catch(() => { });

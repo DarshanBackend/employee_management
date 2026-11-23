@@ -51,17 +51,27 @@ export const createNotification = async ({
   skipPush = false,
 }) => {
   try {
-    const targetRecipient = recipient || recipientId;
-    if (!targetRecipient || !title || !message) {
+    const rawRecipient = recipient || recipientId;
+    if (!rawRecipient || !title || !message) {
       return null;
     }
 
-    const validCategory = NOTIFICATION_CATEGORIES.includes(category)
-      ? category
-      : "System";
+    const targetRecipientId =
+      (rawRecipient && typeof rawRecipient === "object" && rawRecipient._id)
+        ? rawRecipient._id
+        : rawRecipient;
+
+    if (!targetRecipientId) {
+      return null;
+    }
+
+    const matchedCategory = NOTIFICATION_CATEGORIES.find(
+      (c) => c.toLowerCase() === String(category || "").trim().toLowerCase()
+    );
+    const validCategory = matchedCategory || "System";
 
     const doc = await NotificationModel.create({
-      recipient: targetRecipient,
+      recipient: targetRecipientId,
       sender,
       senderName,
       senderAvatar,
@@ -75,7 +85,7 @@ export const createNotification = async ({
     });
 
     if (!skipPush) {
-      const user = await UserModel.findById(targetRecipient).select("fcmToken").lean();
+      const user = await UserModel.findById(targetRecipientId).select("fcmToken").lean();
       if (user?.fcmToken) {
         try {
           await sendPushNotification(user.fcmToken, title, message, {

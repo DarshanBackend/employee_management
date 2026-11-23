@@ -9,20 +9,54 @@ const __dirname = path.dirname(__filename);
 let isFirebaseInitialized = false;
 
 try {
-    const serviceAccountPath = path.join(__dirname, '../serviceAccountKey.json');
+    const candidatePaths = [
+        path.join(__dirname, '../serviceAccountKey.json'),
+        path.join(process.cwd(), 'serviceAccountKey.json'),
+        process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+        process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    ].filter(Boolean);
 
-    if (fs.existsSync(serviceAccountPath)) {
-        const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    let serviceAccount = null;
 
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
-        });
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        try {
+            serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        } catch (e) {
+            console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT env string:", e.message);
+        }
+    }
 
-        console.log("Firebase Admin Initialized Successfully");
+    if (!serviceAccount) {
+        for (const p of candidatePaths) {
+            if (fs.existsSync(p)) {
+                try {
+                    serviceAccount = JSON.parse(fs.readFileSync(p, 'utf8'));
+                    console.log(`Loaded Firebase service account from: ${p}`);
+                    break;
+                } catch (readErr) {
+                    console.error(`Error reading service account file at ${p}:`, readErr.message);
+                }
+            }
+        }
+    }
+
+    if (serviceAccount && serviceAccount.project_id && serviceAccount.private_key) {
+        if (!admin.apps.length) {
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount)
+            });
+        }
+        console.log("Firebase Admin Initialized Successfully with Service Account");
         isFirebaseInitialized = true;
     } else {
-        console.warn("Firebase Service Account Key not found at:", serviceAccountPath);
-        console.warn("Push notifications will NOT be sent until 'serviceAccountKey.json' is added.");
+        const projectId = process.env.FIREBASE_PROJECT_ID || 'employee-management-app-90f96';
+        if (!admin.apps.length) {
+            admin.initializeApp({
+                projectId,
+            });
+        }
+        console.log(`Firebase Admin initialized with project ID: ${projectId}`);
+        isFirebaseInitialized = true;
     }
 } catch (error) {
     console.error("Firebase Initialization Error:", error.message);

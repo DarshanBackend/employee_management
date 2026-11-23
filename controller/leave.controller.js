@@ -395,33 +395,19 @@ export class LeaveController {
 
       const deptName = empUser?.department?.departmentName ? ` (${empUser.department.departmentName})` : "";
 
-      // 1. Send Notification to all Admins (In-app + FCM Push) & Employee Confirmation
+      // 1. Send Notification ONLY to Admins (In-app + FCM Push)
       try {
-        await Promise.allSettled([
-          notifyAdmins({
-            title: "New Leave Application",
-            message: `${empName}${deptName} has applied for ${totalDays} day(s) ${leaveTypeDoc.leaveTypeName} (${formattedFromDate} to ${formattedToDate}). Reason: "${String(reason).trim()}"`,
-            category: "Leave",
-            type: "LEAVE_APPLIED",
-            sender: employeeId,
-            senderName: empName,
-            senderAvatar: empUser?.avatarUrl || req.user?.avatarUrl || null,
-            referenceId: newLeave._id,
-            referenceModel: "Leave",
-          }),
-          notifyUser(employeeId, {
-            title: initialStatus === "Approved" ? "Leave Application Auto-Approved 🎉" : "Leave Application Submitted",
-            message: initialStatus === "Approved"
-              ? `Your leave application for ${totalDays} day(s) ${leaveTypeDoc.leaveTypeName} (${formattedFromDate} to ${formattedToDate}) has been automatically approved.`
-              : `Your leave application for ${totalDays} day(s) ${leaveTypeDoc.leaveTypeName} (${formattedFromDate} to ${formattedToDate}) has been submitted successfully and is awaiting Admin review.`,
-            category: "Leave",
-            type: initialStatus === "Approved" ? "LEAVE_APPROVED" : "LEAVE_SUBMITTED",
-            sender: employeeId,
-            senderName: "System",
-            referenceId: newLeave._id,
-            referenceModel: "Leave",
-          }),
-        ]);
+        await notifyAdmins({
+          title: "New Leave Application",
+          message: `${empName}${deptName} has applied for ${totalDays} day(s) ${leaveTypeDoc.leaveTypeName} (${formattedFromDate} to ${formattedToDate}). Reason: "${String(reason).trim()}"`,
+          category: "Leave",
+          type: "LEAVE_APPLIED",
+          sender: employeeId,
+          senderName: empName,
+          senderAvatar: empUser?.avatarUrl || req.user?.avatarUrl || null,
+          referenceId: newLeave._id,
+          referenceModel: "Leave",
+        });
       } catch (notifErr) {
         console.error("Leave apply notification error:", notifErr);
       }
@@ -814,6 +800,12 @@ export class LeaveController {
       const isApprove = approveKeywords.includes(rawAction);
       const remarks = adminRemarks || managerNote || "";
 
+      const employeeTargetId = leave.employee?._id || leave.employee;
+      const targetEmployeeName =
+        leave.employee?.name ||
+        `${leave.employee?.firstName || ""} ${leave.employee?.lastName || ""}`.trim() ||
+        "Employee";
+
       if (isApprove) {
         leave.status = "Approved";
         leave.adminRemarks = remarks ? remarks.trim() : "Approved by administrator.";
@@ -823,9 +815,9 @@ export class LeaveController {
         // 🌟 INTEGRATE WITH ATTENDANCE RECORD 🌟
         // If the approved leave covers today's date, update today's attendance to "On Leave" or "Half Day"
         const todayStr = getNormalizedDateString();
-        if (leave.fromDate <= todayStr && leave.toDate >= todayStr) {
+        if (leave.fromDate <= todayStr && leave.toDate >= todayStr && employeeTargetId) {
           let attendance = await AttendanceModel.findOne({
-            employee: leave.employee._id,
+            employee: employeeTargetId,
             date: todayStr,
           });
 
@@ -833,11 +825,11 @@ export class LeaveController {
 
           if (!attendance) {
             attendance = new AttendanceModel({
-              employee: leave.employee._id,
+              employee: employeeTargetId,
               date: todayStr,
               formattedDate: formatDisplayDate(new Date(todayStr)),
               status: leaveStatus,
-              notes: `Approved Leave: ${leave.leaveTypeName} (${leave.formattedFromDate} to ${leave.formattedToDate})`,
+              notes: `Approved Leave: ${leave.leaveTypeName} (${leave.formattedFromDate || leave.fromDate} to ${leave.formattedToDate || leave.toDate})`,
             });
           } else {
             attendance.status = leaveStatus;
@@ -872,18 +864,26 @@ export class LeaveController {
         `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() ||
         "Admin";
 
+      const leaveName =
+        leave.leaveTypeName ||
+        leave.leaveType?.leaveTypeName ||
+        "Leave";
+      const fromDateStr = leave.formattedFromDate || leave.fromDate || "";
+      const toDateStr = leave.formattedToDate || leave.toDate || "";
+      const dateRangeStr = fromDateStr
+        ? (fromDateStr === toDateStr ? ` for ${fromDateStr}` : ` (${fromDateStr} to ${toDateStr})`)
+        : "";
+
       const finalRemarks = remarks || rejectionReason || leave.rejectionReason || "";
       const remarksText = finalRemarks ? ` Reason/Remarks: "${finalRemarks.trim()}".` : "";
-
-      const employeeTargetId = leave.employee?._id || leave.employee;
 
       // 🌟 Send Notification to the Employee (In-app + FCM Push) 🌟
       try {
         await notifyUser(employeeTargetId, {
           title: isApprove ? "Leave Application Approved 🎉" : "Leave Application Rejected",
           message: isApprove
-            ? `Your ${leave.leaveTypeName} application (${leave.formattedFromDate} to ${leave.formattedToDate}) has been approved by ${adminActionName}.${remarksText}`
-            : `Your ${leave.leaveTypeName} application (${leave.formattedFromDate} to ${leave.formattedToDate}) has been rejected by ${adminActionName}.${remarksText}`.trim(),
+            ? `Your ${leaveName} application${dateRangeStr} has been approved by ${adminActionName}.${remarksText}`
+            : `Your ${leaveName} application${dateRangeStr} has been rejected by ${adminActionName}.${remarksText}`.trim(),
           category: "Leave",
           type: isApprove ? "LEAVE_APPROVED" : "LEAVE_REJECTED",
           sender: req.user?._id,

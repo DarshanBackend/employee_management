@@ -10,7 +10,11 @@ import {
   sendNotFoundResponse,
 } from "../utils/Response.utils.js";
 
-const getCategoryBadgeColor = (category) => {
+const getCategoryBadgeColor = (category, type = "") => {
+  const normType = String(type || "").toUpperCase();
+  if (normType === "LEAVE_REJECTED") return "#EF4444";
+  if (normType === "LEAVE_APPROVED") return "#10B981";
+
   switch (String(category || "").toLowerCase()) {
     case "leave":
       return "#10B981";
@@ -24,7 +28,11 @@ const getCategoryBadgeColor = (category) => {
   }
 };
 
-const getCategoryIcon = (category) => {
+const getCategoryIcon = (category, type = "") => {
+  const normType = String(type || "").toUpperCase();
+  if (normType === "LEAVE_REJECTED") return "calendar-x";
+  if (normType === "LEAVE_APPROVED") return "calendar-check";
+
   switch (String(category || "").toLowerCase()) {
     case "leave":
       return "calendar";
@@ -151,8 +159,8 @@ export class NotificationController {
           },
           referenceId: item.referenceId,
           referenceModel: item.referenceModel,
-          badgeColor: getCategoryBadgeColor(item.category),
-          icon: getCategoryIcon(item.category),
+          badgeColor: getCategoryBadgeColor(item.category, item.type),
+          icon: getCategoryIcon(item.category, item.type),
           time: formatRelativeTime(item.createdAt),
           createdAt: item.createdAt,
         };
