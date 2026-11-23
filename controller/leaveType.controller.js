@@ -145,7 +145,6 @@ export class LeaveTypeController {
           ? requiresApproval
           : String(requiresApproval).toLowerCase() === "true";
 
-      // Case 1: Existing Leave Type selected by ID (from dropdown)
       if (leaveTypeId && mongoose.Types.ObjectId.isValid(String(leaveTypeId).trim())) {
         const existingById = await LeaveTypeModel.findOne({
           _id: String(leaveTypeId).trim(),
@@ -187,7 +186,6 @@ export class LeaveTypeController {
         );
       }
 
-      // Case 2: Named policy or custom leave type
       const title = leaveTypeName || policyTitle;
       if (!title || !String(title).trim()) {
         return sendBadRequestResponse(res, "Please select an existing leave type or provide a Policy / Leave Title!");
@@ -195,14 +193,12 @@ export class LeaveTypeController {
 
       const cleanName = String(title).trim();
 
-      // Check if this leave type already exists in DB
       const existingByName = await LeaveTypeModel.findOne({
         leaveTypeName: { $regex: new RegExp(`^${cleanName}$`, "i") },
         isDeleted: false,
       });
 
       if (existingByName) {
-        // Update the existing policy configuration
         if (rawBalance !== undefined && rawBalance !== null && rawBalance !== "") {
           existingByName.leaveBalance = balanceNum;
         }
@@ -229,7 +225,6 @@ export class LeaveTypeController {
         );
       }
 
-      // Case 3: Create brand new leave policy
       if (rawBalance === undefined || rawBalance === null || rawBalance === "") {
         return sendBadRequestResponse(res, "Annual leave quota / allowed days is required!");
       }

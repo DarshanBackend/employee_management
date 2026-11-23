@@ -27,13 +27,11 @@ const ShiftRosterSchema = new mongoose.Schema(
       ref: "User",
       required: [true, "Employee is required"],
     },
-    // YYYY-MM-DD format (Monday of the target week)
     weekStartDate: {
       type: String,
       required: [true, "Week start date (YYYY-MM-DD) is required"],
       trim: true,
     },
-    // YYYY-MM-DD format (Sunday of the target week)
     weekEndDate: {
       type: String,
       required: [true, "Week end date (YYYY-MM-DD) is required"],

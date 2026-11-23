@@ -12,7 +12,6 @@ import {
   sendNotFoundResponse,
 } from "../utils/Response.utils.js";
 
-// Helper: Parse time string like "09:00 AM", "06:30 PM", "14:30" to total minutes from midnight
 export const parseTimeToMinutes = (timeStr) => {
   if (!timeStr || typeof timeStr !== "string") return 0;
   const clean = timeStr.trim().toUpperCase();
@@ -38,13 +37,11 @@ export const parseTimeToMinutes = (timeStr) => {
   return hours * 60 + minutes;
 };
 
-// Helper: Calculate duration between start time and end time (supporting overnight shifts)
 export const calculateShiftDuration = (startTime, endTime) => {
   const startMins = parseTimeToMinutes(startTime);
   const endMins = parseTimeToMinutes(endTime);
 
   let diffMins = endMins - startMins;
-  // If end is less than or equal to start, it crosses midnight (e.g. 10:00 PM to 07:00 AM)
   if (diffMins <= 0) {
     diffMins += 24 * 60;
   }
@@ -57,7 +54,6 @@ export const calculateShiftDuration = (startTime, endTime) => {
   return { durationHours, workHoursDisplay };
 };
 
-// Helper: Format minutes from midnight to "hh:mm AM/PM"
 export const formatMinutesToTime = (totalMinutes) => {
   let mins = Math.round(totalMinutes) % (24 * 60);
   if (mins < 0) mins += 24 * 60;
@@ -69,7 +65,6 @@ export const formatMinutesToTime = (totalMinutes) => {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${ampm}`;
 };
 
-// Helper: Compute or standardize breakTime and teaBreaks for a Shift
 export const resolveShiftBreaks = ({
   shiftStartTime,
   shiftEndTime,
@@ -91,7 +86,6 @@ export const resolveShiftBreaks = ({
   let shiftEndMins = parseTimeToMinutes(shiftEndTime || "06:00 PM");
   if (shiftEndMins <= shiftStartMins) shiftEndMins += 24 * 60;
 
-  // 1. Resolve Lunch / Meal Break Time
   let lunchStart =
     (typeof breakTimeInput === "object" ? breakTimeInput?.startTime : null) ||
     breakStartTimeInput ||
@@ -108,7 +102,6 @@ export const resolveShiftBreaks = ({
     null;
 
   if (!lunchStart && !lunchEnd) {
-    // Default: roughly 4 hours after shift start (e.g. 01:00 PM for 09:00 AM shift)
     const defaultLunchStartMins = shiftStartMins + 4 * 60;
     lunchStart = formatMinutesToTime(defaultLunchStartMins);
     lunchEnd = formatMinutesToTime(defaultLunchStartMins + (parseInt(lunchDuration, 10) || 60));
@@ -122,14 +115,12 @@ export const resolveShiftBreaks = ({
     lunchStart = formatMinutesToTime(parseTimeToMinutes(lunchEnd) - dur);
     lunchDuration = dur;
   } else {
-    // Both lunchStart and lunchEnd provided
     let sMin = parseTimeToMinutes(lunchStart);
     let eMin = parseTimeToMinutes(lunchEnd);
     if (eMin <= sMin) eMin += 24 * 60;
     lunchDuration = eMin - sMin;
   }
 
-  // Determine appropriate main meal break name based on shift & time
   const lunchMins = parseTimeToMinutes(lunchStart);
   let resolvedBreakName = "Meal Break";
   if (lunchMins >= 660 && lunchMins < 930) {
@@ -151,7 +142,6 @@ export const resolveShiftBreaks = ({
     durationMinutes: Number(lunchDuration) || 60,
   };
 
-  // 2. Resolve Tea Breaks Count & Duration (Tea break is NOT compulsory!)
   let teaCount = 0;
   if (teaBreakCountInput !== undefined && teaBreakCountInput !== null) {
     const parsed = parseInt(teaBreakCountInput, 10);
@@ -163,7 +153,7 @@ export const resolveShiftBreaks = ({
   } else if (beforeBreakCountInput !== undefined || afterBreakCountInput !== undefined) {
     teaCount = (parseInt(beforeBreakCountInput, 10) || 0) + (parseInt(afterBreakCountInput, 10) || 0);
   } else {
-    teaCount = 0; // Not compulsory! Default is 0 unless explicitly configured.
+    teaCount = 0;
   }
 
   let teaDuration =
@@ -177,7 +167,6 @@ export const resolveShiftBreaks = ({
   if (lunchStartMins < shiftStartMins) lunchStartMins += 24 * 60;
   if (lunchEndMins < lunchStartMins) lunchEndMins += 24 * 60;
 
-  // 3. Resolve Individual Tea Breaks
   let resolvedTeaBreaks = [];
 
   if (Array.isArray(teaBreaksInput) && teaBreaksInput.length > 0) {
@@ -263,7 +252,6 @@ export const resolveShiftBreaks = ({
     }
     teaCount = resolvedTeaBreaks.length;
   } else if (teaCount > 0) {
-    // Auto-calculate positions only when teaCount > 0
     let beforeCount = 0;
     let afterCount = 0;
 
@@ -287,7 +275,6 @@ export const resolveShiftBreaks = ({
       afterCount = Math.max(0, teaCount - beforeCount);
     }
 
-    // Distribute before breaks
     if (beforeCount > 0) {
       const beforeSpan = lunchStartMins - shiftStartMins;
       const step = beforeSpan / (beforeCount + 1);
@@ -303,7 +290,6 @@ export const resolveShiftBreaks = ({
       }
     }
 
-    // Distribute after breaks
     if (afterCount > 0) {
       const afterSpan = shiftEndMins - lunchEndMins;
       const step = afterSpan / (afterCount + 1);
@@ -330,11 +316,9 @@ export const resolveShiftBreaks = ({
   };
 };
 
-// Helper: Get Monday and Sunday dates for a given date
 export const getWeekBounds = (inputDate) => {
   const date = inputDate ? new Date(inputDate) : new Date();
-  const day = date.getDay(); // 0 is Sunday, 1 is Monday...
-  // Calculate distance to previous Monday (if Sunday (0), distance is -6)
+  const day = date.getDay();
   const diffToMonday = day === 0 ? -6 : 1 - day;
 
   const monday = new Date(date);
@@ -388,10 +372,6 @@ export const getWeekBounds = (inputDate) => {
 };
 
 export class ShiftController {
-  /**
-   * Create a new Shift
-   * POST /addShift
-   */
   static async addShift(req, res) {
     try {
       const {
@@ -444,7 +424,6 @@ export class ShiftController {
 
       const { durationHours, workHoursDisplay } = calculateShiftDuration(startTime, endTime);
 
-      // Compute break time (Meal/Lunch break) and tea breaks (short breaks)
       const {
         breakTime: resolvedBreakTime,
         teaBreakCount: resolvedTeaBreakCount,
@@ -510,10 +489,6 @@ export class ShiftController {
     }
   }
 
-  /**
-   * Get all active Shifts with dynamic assigned employee count
-   * GET /getAllShifts
-   */
   static async getAllShifts(req, res) {
     try {
       const { search, status, page, limit } = req.query;
@@ -540,12 +515,10 @@ export class ShiftController {
 
       const shifts = await query;
 
-      // Calculate dynamic assigned employee count for each shift
       const shiftsWithCounts = await Promise.all(
         shifts.map(async (shift) => {
           const shiftObj = shift.toObject();
 
-          // Count employees assigned to this shift (prioritizing employee.shift, falling back only when shift is unset)
           const assignedCount = await UserModel.countDocuments({
             role: "employee",
             isUserDeleted: { $ne: true },
@@ -591,10 +564,6 @@ export class ShiftController {
     }
   }
 
-  /**
-   * Get Shift by ID with list of assigned employees
-   * GET /getShiftById/:id
-   */
   static async getShiftById(req, res) {
     try {
       const { id } = req.params;
@@ -632,10 +601,6 @@ export class ShiftController {
     }
   }
 
-  /**
-   * Update an existing Shift
-   * PATCH /updateShift/:id
-   */
   static async updateShift(req, res) {
     try {
       const { id } = req.params;
@@ -702,7 +667,6 @@ export class ShiftController {
         shift.workHoursDisplay = workHoursDisplay;
       }
 
-      // Update breakTime and teaBreaks if provided or if timings changed
       if (
         breakTime !== undefined ||
         lunchBreak !== undefined ||
@@ -773,7 +737,6 @@ export class ShiftController {
 
       await shift.save();
 
-      // If shift name was updated, synchronize employee records that have matching shiftTiming string
       if (oldName !== shift.shiftName) {
         await UserModel.updateMany(
           {
@@ -805,10 +768,6 @@ export class ShiftController {
     }
   }
 
-  /**
-   * Delete Shift (Permanently removes record from database)
-   * DELETE /deleteShift/:id
-   */
   static async deleteShift(req, res) {
     try {
       const { id } = req.params;
@@ -822,7 +781,6 @@ export class ShiftController {
         return sendNotFoundResponse(res, "Shift not found");
       }
 
-      // Check how many employees are currently assigned
       const assignedCount = await UserModel.countDocuments({
         role: "employee",
         isUserDeleted: { $ne: true },
@@ -833,7 +791,6 @@ export class ShiftController {
         ],
       });
 
-      // Find an alternative default shift or general shift if employees need fallback
       const fallbackShift = await ShiftModel.findOne({
         _id: { $ne: id },
         status: "Active",
@@ -841,7 +798,6 @@ export class ShiftController {
 
       if (assignedCount > 0) {
         if (fallbackShift) {
-          // Reassign to fallback shift
           await UserModel.updateMany(
             {
               role: "employee",
@@ -860,7 +816,6 @@ export class ShiftController {
             }
           );
         } else {
-          // Unassign if no other shift exists
           await UserModel.updateMany(
             {
               role: "employee",
@@ -880,7 +835,6 @@ export class ShiftController {
         }
       }
 
-      // Clean up weekly rosters referencing this deleted shift
       const dayKeys = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
       for (const day of dayKeys) {
         await ShiftRosterModel.updateMany(
@@ -889,7 +843,6 @@ export class ShiftController {
         );
       }
 
-      // Hard delete: Permanently remove the shift record from database
       await ShiftModel.findByIdAndDelete(id);
 
       await recordAuditLog(req, {
@@ -912,10 +865,6 @@ export class ShiftController {
     }
   }
 
-  /**
-   * Lightweight dropdown list for Employee Add/Edit modal
-   * GET /getShiftDropdown
-   */
   static async getShiftDropdown(req, res) {
     try {
       const shifts = await ShiftModel.find({
@@ -933,16 +882,6 @@ export class ShiftController {
     }
   }
 
-  /**
-   * Weekly Shift Roster API
-   * GET /getWeeklyRoster
-   * Query params:
-   *   - startDate: YYYY-MM-DD (e.g. 2026-10-05)
-   *   - shift: Shift ID or Shift Name filter (e.g. "Morning", "General", "Evening", "Night")
-   *   - department: Department ID filter
-   *   - search: Search text for employee name, email, employeeId
-   *   - page, limit
-   */
   static async getWeeklyRoster(req, res) {
     try {
       const {
@@ -957,13 +896,11 @@ export class ShiftController {
       const weekBounds = getWeekBounds(startDate);
       const { weekStartDate, weekEndDate, formattedRange, days } = weekBounds;
 
-      // 1. Fetch all active shifts to create filter badge counters
       const activeShifts = await ShiftModel.find({ status: "Active" }).sort({
         isDefault: -1,
         createdAt: 1,
       });
 
-      // 2. Build employee search & department filter
       const empFilter = {
         role: "employee",
         isUserDeleted: { $ne: true },
@@ -985,7 +922,6 @@ export class ShiftController {
         ];
       }
 
-      // Fetch employees matching base filter
       const allActiveEmployees = await UserModel.find(empFilter)
         .select("_id name firstName lastName employeeId avatarUrl email employeeStatus department designation shift shiftAndSchedule")
         .populate("department", "departmentName icon color")
@@ -994,7 +930,6 @@ export class ShiftController {
         .populate("shiftAndSchedule.shift", "shiftName startTime endTime workHoursDisplay color")
         .sort({ employeeId: 1, createdAt: 1 });
 
-      // Fetch existing roster assignments for this week
       const rosterEntries = await ShiftRosterModel.find({
         weekStartDate,
         employee: { $in: allActiveEmployees.map((e) => e._id) },
@@ -1012,11 +947,9 @@ export class ShiftController {
         rosterByEmpId.set(String(r.employee), r);
       });
 
-      // Default shift fallback if employee has no custom roster
       const defaultGeneralShift =
         activeShifts.find((s) => s.isDefault) || activeShifts[0] || null;
 
-      // Build roster row for every employee
       const employeeRosterRows = allActiveEmployees.map((emp) => {
         const primaryShift =
           emp.shift ||
@@ -1110,7 +1043,6 @@ export class ShiftController {
         };
       });
 
-      // 3. Compute Shift Filter Pill counts (as shown in screenshot: All Shifts: 6, Morning: 1, General: 2, etc.)
       const shiftFilterCounters = [
         {
           key: "all",
@@ -1140,7 +1072,6 @@ export class ShiftController {
         });
       });
 
-      // 4. Apply shift filter to table rows if provided
       let filteredRows = employeeRosterRows;
       if (shiftFilter && shiftFilter !== "all") {
         filteredRows = employeeRosterRows.filter((r) => {
@@ -1154,7 +1085,6 @@ export class ShiftController {
         });
       }
 
-      // Pagination
       const pageNum = parseInt(page, 10) || 1;
       const limitNum = parseInt(limit, 10) || 10;
       const totalFiltered = filteredRows.length;
@@ -1182,10 +1112,6 @@ export class ShiftController {
     }
   }
 
-  /**
-   * Assign or update weekly roster for an employee or bulk employees
-   * POST /assignWeeklyRoster
-   */
   static async assignWeeklyRoster(req, res) {
     try {
       const {
@@ -1193,7 +1119,7 @@ export class ShiftController {
         weekStartDate,
         weekEndDate: customWeekEndDate,
         schedule,
-        bulkRoster, // Optional array of { employeeId, schedule }
+        bulkRoster,
       } = req.body;
 
       if (bulkRoster && Array.isArray(bulkRoster) && bulkRoster.length > 0) {
@@ -1226,7 +1152,6 @@ export class ShiftController {
         return sendSuccessResponse(res, "Bulk roster updated successfully!", savedResults);
       }
 
-      // Single employee assignment
       if (!employeeId || !mongoose.Types.ObjectId.isValid(employeeId)) {
         return sendBadRequestResponse(res, "Valid employee ID is required");
       }
@@ -1270,10 +1195,6 @@ export class ShiftController {
     }
   }
 
-  /**
-   * Fast assign employee(s) to a Shift
-   * POST /assignEmployeeShift
-   */
   static async assignEmployeeShift(req, res) {
     try {
       const { employeeId, employeeIds, shiftId } = req.body;

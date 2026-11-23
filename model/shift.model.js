@@ -39,7 +39,6 @@ const ShiftSchema = new mongoose.Schema(
       trim: true,
       default: "9 Hours",
     },
-    // Lunch / Main Break Time
     breakTime: {
       name: {
         type: String,
@@ -61,7 +60,6 @@ const ShiftSchema = new mongoose.Schema(
         default: 60,
       },
     },
-    // Tea Breaks Configuration (Optional / Not Compulsory)
     teaBreakCount: {
       type: Number,
       default: 0,
@@ -69,7 +67,7 @@ const ShiftSchema = new mongoose.Schema(
     },
     teaBreakDuration: {
       type: Number,
-      default: 15, // in minutes per tea break
+      default: 15,
       min: [0, "Tea break duration cannot be negative"],
     },
     teaBreaks: [

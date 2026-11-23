@@ -23,7 +23,6 @@ import {
   extractBreaksFromShift,
 } from "../services/breakTracker.service.js";
 
-// Helper: Parse flexible calendar date inputs (YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY, ISO, Date)
 export const parseCalendarDate = (inputDate) => {
   if (!inputDate) {
     const now = new Date();
@@ -41,7 +40,6 @@ export const parseCalendarDate = (inputDate) => {
     return new Date(now.getFullYear(), now.getMonth(), now.getDate());
   }
 
-  // Match YYYY-MM-DD or YYYY/MM/DD (also handles ISO prefix like 2026-11-18T00:00:00Z)
   const ymdMatch = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:$|T|\s)/);
   if (ymdMatch) {
     const year = parseInt(ymdMatch[1], 10);
@@ -58,7 +56,6 @@ export const parseCalendarDate = (inputDate) => {
     return null;
   }
 
-  // Match DD-MM-YYYY or DD/MM/YYYY
   const dmyMatch = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
   if (dmyMatch) {
     const day = parseInt(dmyMatch[1], 10);
@@ -75,13 +72,11 @@ export const parseCalendarDate = (inputDate) => {
     return null;
   }
 
-  // Fallback for natural date strings like "18 Nov 2026"
   const fallback = new Date(raw);
   if (isNaN(fallback.getTime())) return null;
   return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate());
 };
 
-// Helper: Format Date to YYYY-MM-DD
 export const getNormalizedDateString = (inputDate) => {
   const d = parseCalendarDate(inputDate) || new Date();
   const year = d.getFullYear();
@@ -90,7 +85,6 @@ export const getNormalizedDateString = (inputDate) => {
   return `${year}-${month}-${day}`;
 };
 
-// Helper: Format Date to "08 Oct 2026"
 export const formatDisplayDate = (inputDate) => {
   const d = parseCalendarDate(inputDate) || new Date();
   const day = String(d.getDate()).padStart(2, "0");
@@ -103,7 +97,6 @@ export const formatDisplayDate = (inputDate) => {
   return `${day} ${month} ${year}`;
 };
 
-// Helper: Format Date to "09:30 AM"
 export const formatTimeDisplay = (date) => {
   if (!date) return "";
   const d = new Date(date);
@@ -115,7 +108,6 @@ export const formatTimeDisplay = (date) => {
   return `${String(hours).padStart(2, "0")}:${minutes} ${ampm}`;
 };
 
-// Helper: Parse "09:30 AM" or "18:00" to minutes from midnight
 export const parseTimeToMinutes = (timeStr) => {
   if (!timeStr || typeof timeStr !== "string") return 0;
   const clean = timeStr.trim().toUpperCase();
@@ -141,7 +133,6 @@ export const parseTimeToMinutes = (timeStr) => {
   return hours * 60 + minutes;
 };
 
-// Helper: Combine Date string (YYYY-MM-DD) and Time string (09:30 AM) into a Date object
 export const combineDateAndTime = (dateStr, timeStr) => {
   try {
     const [year, month, day] = dateStr.split("-").map(Number);
@@ -154,7 +145,6 @@ export const combineDateAndTime = (dateStr, timeStr) => {
   }
 };
 
-// Helper: Calculate overtime minutes based on total work minutes, required shift minutes, and attendance overtime rules
 export const calculateOvertimeMinutes = async (totalWorkMinutes, requiredWorkMinutes = 540) => {
   if (!totalWorkMinutes || totalWorkMinutes <= requiredWorkMinutes) {
     return 0;
@@ -175,7 +165,6 @@ export const calculateOvertimeMinutes = async (totalWorkMinutes, requiredWorkMin
   return extraMinutes;
 };
 
-// Helper: Evaluate shift timing status (handles normal daytime shifts and overnight night shifts like 11:00 PM to 07:00 AM)
 export const evaluateShiftTiming = (shiftStartTime, shiftEndTime, checkTime = new Date(), earlyBufferMinutes = 30) => {
   if (!shiftStartTime || !shiftEndTime) {
     return { isShiftActive: true, isShiftEnded: false, isShiftNotStarted: false };
@@ -186,7 +175,6 @@ export const evaluateShiftTiming = (shiftStartTime, shiftEndTime, checkTime = ne
   const curM = checkTime.getHours() * 60 + checkTime.getMinutes();
 
   if (startM < endM) {
-    // Same-day daytime shift: e.g. 09:00 AM to 06:00 PM
     if (curM > endM) {
       return { isShiftActive: false, isShiftEnded: true, isShiftNotStarted: false };
     }
@@ -195,8 +183,6 @@ export const evaluateShiftTiming = (shiftStartTime, shiftEndTime, checkTime = ne
     }
     return { isShiftActive: true, isShiftEnded: false, isShiftNotStarted: false };
   } else {
-    // Overnight / night shift: e.g. 11:00 PM to 07:00 AM
-    // Active check-in window: from (11 PM - 30m = 10:30 PM) to midnight (1440), OR from midnight (0) to 07:00 AM (420)
     const earlyAllowedM = startM - earlyBufferMinutes;
     const isDuringShift = (curM >= earlyAllowedM) || (curM <= endM);
 
@@ -204,10 +190,6 @@ export const evaluateShiftTiming = (shiftStartTime, shiftEndTime, checkTime = ne
       return { isShiftActive: true, isShiftEnded: false, isShiftNotStarted: false };
     }
 
-    // Outside active shift window (between endM e.g. 07:00 AM and earlyAllowedM e.g. 10:30 PM):
-    // From shift end (07:00 AM) to midpoint (~02:45 PM): The night shift has ended/completed!
-    // Employee cannot check in after shift end time (07:00 AM).
-    // From midpoint to earlyAllowedM (~02:45 PM to 10:30 PM): Tonight's shift has not started yet.
     const gap = earlyAllowedM - endM;
     const midpoint = Math.floor(endM + gap / 2);
 
@@ -219,7 +201,6 @@ export const evaluateShiftTiming = (shiftStartTime, shiftEndTime, checkTime = ne
   }
 };
 
-// Helper: Get logical shift date (handles post-midnight check-ins for night shifts)
 export const getLogicalShiftDate = (shiftStartTime, shiftEndTime, checkTime = new Date()) => {
   const todayStr = getNormalizedDateString(checkTime);
   if (!shiftStartTime || !shiftEndTime) return todayStr;
@@ -228,7 +209,6 @@ export const getLogicalShiftDate = (shiftStartTime, shiftEndTime, checkTime = ne
   const endM = parseTimeToMinutes(shiftEndTime);
   const curM = checkTime.getHours() * 60 + checkTime.getMinutes();
 
-  // If overnight shift (startM > endM) and checking in between midnight (0) and shiftEndTime (e.g. 00:00 to 07:00 AM)
   if (startM > endM && curM <= endM) {
     const yesterday = new Date(checkTime);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -238,24 +218,19 @@ export const getLogicalShiftDate = (shiftStartTime, shiftEndTime, checkTime = ne
   return todayStr;
 };
 
-// Helper: Check if check-in time is after the shift end time
 export const isAfterShiftEndTime = (shiftStartTime, shiftEndTime, checkTime = new Date()) => {
   const result = evaluateShiftTiming(shiftStartTime, shiftEndTime, checkTime);
   return result.isShiftEnded;
 };
 
-// Helper: Determine if check-in is late considering daytime or overnight shifts
 export const checkIsLate = (shiftStartTime, checkTime = new Date()) => {
   if (!shiftStartTime) return false;
   const startM = parseTimeToMinutes(shiftStartTime);
   const curM = checkTime.getHours() * 60 + checkTime.getMinutes();
 
   if (startM < 720) {
-    // Normal daytime shift (e.g. 09:00 AM)
     return curM > startM;
   } else {
-    // Overnight / night shift (e.g. 11:00 PM = 1380)
-    // If checking in after midnight and before noon, it is definitely late
     if (curM < 720) return true;
     return curM > startM;
   }
@@ -315,10 +290,6 @@ export const buildActivityTimeline = (attendance) => {
 };
 
 export class AttendanceController {
-  /**
-   * Employee Check-In
-   * POST /attendance/checkIn
-   */
   static async checkIn(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -343,12 +314,8 @@ export class AttendanceController {
       let requiredWorkMinutes = 540;
 
       if (isAdmin) {
-        // 🌟 ADMIN HAS NO SHIFT RESTRICTIONS 🌟
-        // Admin has no shift time and can check in at any time
         requiredWorkMinutes = 0;
       } else {
-        // 🌟 EMPLOYEE SHIFT RESOLUTION 🌟
-        // 1. Check if shiftId is passed explicitly in request body
         const requestedShiftId = req.body?.shiftId || req.body?.shift || null;
         if (requestedShiftId) {
           if (!mongoose.Types.ObjectId.isValid(requestedShiftId)) {
@@ -361,7 +328,6 @@ export class AttendanceController {
           activeShift = foundShift;
         }
 
-        // 2. Check employee's assigned shift in UserModel
         if (!activeShift) {
           const user = await UserModel.findById(employeeId)
             .populate("shift")
@@ -369,7 +335,6 @@ export class AttendanceController {
           activeShift = user?.shift || user?.shiftAndSchedule?.shift || null;
         }
 
-        // 3. Check weekly roster for day-specific shift
         if (!activeShift) {
           const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
           const dayOfWeek = dayNames[now.getDay()];
@@ -384,7 +349,6 @@ export class AttendanceController {
           }
         }
 
-        // 4. Default active shift if none assigned
         if (!activeShift) {
           activeShift =
             (await ShiftModel.findOne({ isDefault: true, status: "Active" })) ||
@@ -411,12 +375,10 @@ export class AttendanceController {
         }
       }
 
-      // Determine logical target date for attendance record (supporting post-midnight overnight shifts)
       const targetDate = isAdmin
         ? todayDate
         : getLogicalShiftDate(shiftStartTime, shiftEndTime, now);
 
-      // Check if attendance already recorded for this target date
       let attendance = await AttendanceModel.findOne({
         employee: employeeId,
         date: targetDate,
@@ -431,7 +393,6 @@ export class AttendanceController {
       }
 
       if (!isAdmin) {
-        // 🌟 EVALUATE SHIFT TIMING WINDOW 🌟
         const timingStatus = evaluateShiftTiming(shiftStartTime, shiftEndTime, now);
 
         if (timingStatus.isShiftEnded) {
@@ -524,7 +485,6 @@ export class AttendanceController {
               : "On-time check-in",
         });
       } else {
-        // Attendance record existed, update checkIn
         attendance.checkInTime = now;
         attendance.checkInDisplay = checkInDisplay;
         attendance.status = initialStatus;
@@ -588,17 +548,6 @@ export class AttendanceController {
     }
   }
 
-  /**
-   * Employee Check-Out
-   * POST /attendance/checkOut
-   *
-   * STRICT REQUIREMENTS:
-   * 1. If employee forgot check-in, check-out is strictly blocked!
-   * 2. Compulsory shift hours completion: e.g. If checked in at 9:10 AM,
-   *    earliest checkout is at 6:10 PM (9 hours / compulsory hours must be completed).
-   * 3. Early Checkout Exception: If employee applied for 'Early Out Regularization'
-   *    (e.g. leave early at 3:25 PM) and Admin APPROVED it, then employee CAN check out early!
-   */
   static async checkOut(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -614,13 +563,11 @@ export class AttendanceController {
       }
       const checkOutDisplay = formatTimeDisplay(now);
 
-      // 1. Look for today's attendance record
       let attendance = await AttendanceModel.findOne({
         employee: employeeId,
         date: todayDate,
       });
 
-      // If no check-in today, check if there is an active checked-in shift from yesterday (e.g. overnight shift 11 PM to 7 AM)
       if (!attendance || !attendance.checkInTime) {
         const yesterday = new Date(now);
         yesterday.setDate(yesterday.getDate() - 1);
@@ -638,9 +585,7 @@ export class AttendanceController {
         }
       }
 
-      // Check if check-in exists
       if (!attendance || !attendance.checkInTime) {
-        // Check if employee already submitted a pending regularization request
         const pendingRegularization = await AttendanceRegularizationModel.findOne({
           employee: employeeId,
           date: attendance?.date || todayDate,
@@ -670,7 +615,6 @@ export class AttendanceController {
         });
       }
 
-      // 2. CHECK IF ALREADY CHECKED OUT
       if (attendance.checkOutTime) {
         return res.status(400).json({
           success: false,
@@ -679,8 +623,6 @@ export class AttendanceController {
         });
       }
 
-      // 3. CHECK COMPULSORY WORK HOURS COMPLETION OR APPROVED EARLY LEAVE
-      // Resolve employee shift for accurate break sync
       let activeShift = null;
       if (!isAdmin) {
         const user = await UserModel.findById(employeeId).populate("shift").populate("shiftAndSchedule.shift");
@@ -691,7 +633,6 @@ export class AttendanceController {
             (await ShiftModel.findOne({ status: "Active" }));
         }
 
-        // Synchronize break auto-stop and late resume penalties
         syncAttendanceBreakStatus(attendance, activeShift, now);
       }
 
@@ -706,11 +647,9 @@ export class AttendanceController {
       const earliestCheckoutDisplay =
         attendance.earliestAllowedCheckOutDisplay || formatTimeDisplay(earliestCheckoutDate);
 
-      // Admin has no compulsory shift hours restriction
       const isHoursCompleted =
         isAdmin || now.getTime() >= earliestCheckoutDate.getTime();
 
-      // Check if Admin approved a Leave for this date in LeaveModel
       const approvedLeave = await LeaveModel.findOne({
         employee: employeeId,
         fromDate: { $lte: targetDate },
@@ -718,7 +657,6 @@ export class AttendanceController {
         status: "Approved",
       });
 
-      // Check if Admin approved an early out / leave request in AttendanceRegularizationModel
       const approvedEarlyOut = await AttendanceRegularizationModel.findOne({
         employee: employeeId,
         date: targetDate,
@@ -737,9 +675,7 @@ export class AttendanceController {
         attendance.isEarlyOutApproved || approvedEarlyOut || approvedLeave
       );
 
-      // If neither shift hours are completed NOR leave has been approved by admin, checkout is strictly BLOCKED
       if (!isHoursCompleted && !isEarlyDepartureApproved) {
-        // Check if employee applied for leave and it is Pending
         const pendingLeave = await LeaveModel.findOne({
           employee: employeeId,
           fromDate: { $lte: targetDate },
@@ -747,7 +683,6 @@ export class AttendanceController {
           status: "Pending",
         });
 
-        // Check if early out regularization is Pending
         const pendingEarlyOut = await AttendanceRegularizationModel.findOne({
           employee: employeeId,
           date: targetDate,
@@ -805,8 +740,6 @@ export class AttendanceController {
         });
       }
 
-      // 4. PROCEED WITH CHECK-OUT (Shift hours completed OR early checkout approved via Admin-approved leave)
-      // Auto-finalize any active or pending breaks and pauses so checkout proceeds cleanly
       if (Array.isArray(attendance.breaks)) {
         for (const brk of attendance.breaks) {
           if (brk.status === "Active" || brk.status === "Pending Resume") {
@@ -830,7 +763,6 @@ export class AttendanceController {
         attendance.activePause = null;
       }
 
-      // Re-calculate pure working time with breaks finalized
       syncAttendanceBreakStatus(attendance, activeShift, now);
 
       attendance.checkOutTime = now;
@@ -886,10 +818,6 @@ export class AttendanceController {
     }
   }
 
-  /**
-   * Get Today's Attendance Punch Status for Logged-in Employee
-   * GET /attendance/todayStatus
-   */
   static async getTodayAttendanceStatus(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -897,7 +825,6 @@ export class AttendanceController {
       const todayDate = getNormalizedDateString();
       const formattedToday = formatDisplayDate();
 
-      // 🌟 IF ADMIN: NO SHIFT RESTRICTIONS 🌟
       if (isAdmin) {
         let attendance = await AttendanceModel.findOne({ employee: employeeId, date: todayDate });
         const hasCheckedIn = Boolean(attendance && attendance.checkInTime);
@@ -969,10 +896,8 @@ export class AttendanceController {
         });
       }
 
-      // 🌟 FOR EMPLOYEE: RETRIEVE TODAY'S OR OVERNIGHT ATTENDANCE 🌟
       let attendance = await AttendanceModel.findOne({ employee: employeeId, date: todayDate });
 
-      // If no check-in today, check if there is an active checked-in shift from yesterday (e.g. overnight shift 11 PM to 7 AM)
       if (!attendance || !attendance.checkInTime) {
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
@@ -1037,7 +962,6 @@ export class AttendanceController {
           .populate("shiftAndSchedule.shift"),
       ]);
 
-      // 🌟 RESOLVE TARGET SHIFT FOR EMPLOYEE 🌟
       let targetShift = null;
       if (req.query?.shiftId && mongoose.Types.ObjectId.isValid(req.query.shiftId)) {
         targetShift = await ShiftModel.findById(req.query.shiftId);
@@ -1054,7 +978,6 @@ export class AttendanceController {
       const hasCheckedIn = Boolean(attendance && attendance.checkInTime);
       const hasCheckedOut = Boolean(attendance && attendance.checkOutTime);
 
-      // Synchronize break auto-stop and late penalties if employee is currently checked in
       if (hasCheckedIn && !hasCheckedOut && attendance) {
         const { modified } = syncAttendanceBreakStatus(attendance, targetShift, new Date());
         if (modified) {
@@ -1214,11 +1137,6 @@ export class AttendanceController {
     }
   }
 
-  /**
-   * Submit Attendance Regularization Request
-   * (Employee applies, or Admin creates for employee)
-   * POST /attendance/applyRegularization
-   */
   static async applyRegularization(req, res) {
     try {
       const {
@@ -1255,7 +1173,6 @@ export class AttendanceController {
         return sendBadRequestResponse(res, "Reason for regularization is required");
       }
 
-      // Determine target employee
       let finalEmployeeId = req.user?._id;
       if (req.user?.role === "admin" && targetEmployeeId) {
         if (!mongoose.Types.ObjectId.isValid(targetEmployeeId)) {
@@ -1264,11 +1181,9 @@ export class AttendanceController {
         finalEmployeeId = targetEmployeeId;
       }
 
-      // Format date
       const normalizedDate = getNormalizedDateString(date);
       const displayDate = formatDisplayDate(date);
 
-      // Check for existing pending request for this employee, date, and correctionType
       const existingPending = await AttendanceRegularizationModel.findOne({
         employee: finalEmployeeId,
         date: normalizedDate,
@@ -1284,7 +1199,6 @@ export class AttendanceController {
         });
       }
 
-      // Determine original punch
       let originalPunch = customOriginalPunch;
       if (!originalPunch || !originalPunch.trim()) {
         const attendance = await AttendanceModel.findOne({
@@ -1366,11 +1280,6 @@ export class AttendanceController {
     }
   }
 
-  /**
-   * Get Logged-in Employee's Submitted Regularization Requests
-   * (Screenshot 4: "My Submitted Correction Requests")
-   * GET /attendance/myRegularizations
-   */
   static async getMyRegularizations(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -1414,20 +1323,10 @@ export class AttendanceController {
     }
   }
 
-  /**
-   * Get Admin Regularization Inbox
-   * (Screenshot 1: "Attendance Corrections - Regularization Inbox")
-   * GET /attendance/regularizationInbox
-   *
-   * Query params:
-   *   - status: "all" | "pending" | "approved" | "rejected"
-   *   - search: employee name, employeeId, reason, date
-   */
   static async getRegularizationInbox(req, res) {
     try {
       const { status, search, page = 1, limit = 10 } = req.query;
 
-      // 1. Compute Tab Counters (All, Pending, Approved, Rejected)
       const [allCount, pendingCount, approvedCount, rejectedCount] = await Promise.all([
         AttendanceRegularizationModel.countDocuments({}),
         AttendanceRegularizationModel.countDocuments({ status: "Pending" }),
@@ -1442,7 +1341,6 @@ export class AttendanceController {
         rejected: rejectedCount,
       };
 
-      // 2. Build filter
       const filter = {};
       if (status && status.toLowerCase() !== "all") {
         filter.status = new RegExp(`^${status.trim()}$`, "i");
@@ -1451,7 +1349,6 @@ export class AttendanceController {
       if (search && search.trim()) {
         const regex = new RegExp(search.trim(), "i");
 
-        // Find matching employees first
         const matchingUsers = await UserModel.find({
           $or: [{ name: regex }, { firstName: regex }, { lastName: regex }, { employeeId: regex }],
         }).select("_id");
@@ -1495,14 +1392,6 @@ export class AttendanceController {
     }
   }
 
-  /**
-   * Admin Approve or Reject Regularization Request
-   * PATCH /attendance/actionRegularization/:id
-   *
-   * WHEN APPROVED:
-   * Updates or creates Attendance record for that day.
-   * If 'Missed Check-In' is approved, check-in is saved, enabling the employee to Check-Out!
-   */
   static async actionRegularization(req, res) {
     try {
       const { id } = req.params;
@@ -1536,7 +1425,6 @@ export class AttendanceController {
         request.actionBy = req.user?._id;
         request.actionAt = new Date();
 
-        // 🌟 APPLY REGULARIZATION TO ATTENDANCE RECORD 🌟
         let attendance = await AttendanceModel.findOne({
           employee: request.employee._id,
           date: request.date,
@@ -1554,20 +1442,17 @@ export class AttendanceController {
         const requestedDateObj = combineDateAndTime(request.date, request.requestedTimestamp);
 
         if (request.correctionType === "Missed Check-In") {
-          // Record the regularized check-in!
           attendance.checkInTime = requestedDateObj;
           attendance.checkInDisplay = request.requestedTimestamp;
           attendance.isCheckInRegularized = true;
           attendance.status = "Present";
           attendance.notes = `Check-in regularized by Admin: ${request.reason}`;
         } else if (request.correctionType === "Missed Check-Out") {
-          // Record the regularized check-out!
           attendance.checkOutTime = requestedDateObj;
           attendance.checkOutDisplay = request.requestedTimestamp;
           attendance.isCheckOutRegularized = true;
           attendance.notes = `Check-out regularized by Admin: ${request.reason}`;
 
-          // Calculate work hours if check-in is present
           if (attendance.checkInTime) {
             const diffMs = requestedDateObj.getTime() - new Date(attendance.checkInTime).getTime();
             const totalMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
@@ -1580,7 +1465,7 @@ export class AttendanceController {
           attendance.checkInTime = requestedDateObj;
           attendance.checkInDisplay = request.requestedTimestamp;
           attendance.isCheckInRegularized = true;
-          attendance.status = "Present"; // Overrides 'Late' to 'Present'
+          attendance.status = "Present";
           attendance.notes = `Late punch regularized by Admin: ${request.reason}`;
         } else if (
           [
@@ -1604,7 +1489,6 @@ export class AttendanceController {
             ? `${attendance.notes} | ${request.correctionType} approved by Admin (${request.requestedTimestamp}): ${request.reason}`
             : `${request.correctionType} approved by Admin (${request.requestedTimestamp}): ${request.reason}`;
 
-          // If the request was for a past date, also set checkout time directly
           if (request.date !== todayDate) {
             attendance.checkOutTime = requestedDateObj;
             attendance.checkOutDisplay = request.requestedTimestamp;
@@ -1622,7 +1506,6 @@ export class AttendanceController {
 
         await attendance.save();
       } else {
-        // Reject
         request.status = "Rejected";
         request.rejectionReason = rejectionReason
           ? rejectionReason.trim()
@@ -1669,16 +1552,6 @@ export class AttendanceController {
     }
   }
 
-  /**
-   * Start / Resume Employee Tracker
-   * POST /attendance/startTracker or POST /attendance/resumeTracker
-   *
-   * BUSINESS REQUIREMENT:
-   * When break (tea break or lunch break) finishes, tracker DOES NOT auto-start.
-   * Employee must manually click start.
-   * If employee starts tracker late after break finish time, that late delay is
-   * added at the end ("last ma add thy jase") -> earliestAllowedCheckOut is extended!
-   */
   static async startTracker(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -1695,7 +1568,6 @@ export class AttendanceController {
         date: todayDate,
       });
 
-      // If no check-in today, check if there is an active overnight shift
       if (!attendance || !attendance.checkInTime) {
         const yesterday = new Date(now);
         yesterday.setDate(yesterday.getDate() - 1);
@@ -1727,7 +1599,6 @@ export class AttendanceController {
         );
       }
 
-      // Resolve employee shift
       let activeShift = null;
       if (!isAdmin) {
         const user = await UserModel.findById(employeeId)
@@ -1741,13 +1612,11 @@ export class AttendanceController {
         }
       }
 
-      // 1. Sync current break status first
       const { modified } = syncAttendanceBreakStatus(attendance, activeShift, now);
       if (modified) {
         await attendance.save();
       }
 
-      // If already running and no active break or manual pause to resume
       if (attendance.trackerStatus === "RUNNING" && !attendance.activeBreak && !attendance.activePause) {
         return sendSuccessResponse(res, "Tracker is already running.", {
           trackerStatus: attendance.trackerStatus,
@@ -1759,7 +1628,6 @@ export class AttendanceController {
         });
       }
 
-      // 2. Resume tracker and compute late restart penalties or manual pause durations
       const result = await resumeEmployeeTracker(attendance, now, activeShift?.startTime);
 
       await recordAuditLog(req, {
@@ -1809,12 +1677,6 @@ export class AttendanceController {
     }
   }
 
-  /**
-   * Pause Tracker / Custom Pause Manually (for employee's own reason)
-   * POST /attendance/pauseTracker
-   * NOTE: This does NOT consume scheduled breaks (Lunch / Tea Break).
-   * Scheduled breaks only trigger automatically at scheduled times.
-   */
   static async pauseTracker(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -1830,7 +1692,6 @@ export class AttendanceController {
         date: todayDate,
       });
 
-      // If no check-in today, check if there is an active overnight shift
       if (!attendance || !attendance.checkInTime) {
         const yesterday = new Date(now);
         yesterday.setDate(yesterday.getDate() - 1);
@@ -1870,7 +1731,6 @@ export class AttendanceController {
         );
       }
 
-      // Safe body handling (defaults gracefully if body is empty or undefined)
       const body = req.body || {};
       const reason = body.reason || body.breakName || "Manual Pause / Personal Reason";
 
@@ -1898,10 +1758,6 @@ export class AttendanceController {
     }
   }
 
-  /**
-   * Get Today's Break Summary & Late Penalty Details
-   * GET /attendance/breakSummary
-   */
   static async getBreakSummary(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -2133,7 +1989,7 @@ export class AttendanceController {
         parsedDateObj.getMonth(),
         parsedDateObj.getDate() + 1
       );
-      const targetMonthPrefix = targetDate.slice(0, 7); // YYYY-MM
+      const targetMonthPrefix = targetDate.slice(0, 7);
 
       const pageNum = Math.max(1, parseInt(page, 10) || 1);
       const limitNum = Math.max(1, parseInt(limit, 10) || 10);

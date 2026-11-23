@@ -29,7 +29,6 @@ const safeAuditLog = async (req, action, description) => {
       });
     }
   } catch (e) {
-    // Non-blocking
   }
 };
 
@@ -51,9 +50,6 @@ const CATEGORY_ICONS = {
   General: "file-text",
 };
 
-/**
- * Quick Start Presets (matching Screenshot 2, 3, 4)
- */
 export const QUICK_START_PRESETS = [
   {
     presetKey: "probation_confirmation",
@@ -192,9 +188,6 @@ People & Culture Operations
   },
 ];
 
-/**
- * Format Template Item for API responses
- */
 const formatTemplateItem = (t) => {
   const body = t.bodyContent || "";
   const variablesUsed = SMART_VARIABLES.filter((v) => body.includes(v.key)).map(
@@ -223,9 +216,6 @@ const formatTemplateItem = (t) => {
   };
 };
 
-/**
- * Replace smart variables in template body with actual values
- */
 const replaceVariables = (content, values) => {
   if (!content) return "";
   let rendered = content;
@@ -237,13 +227,9 @@ const replaceVariables = (content, values) => {
   return rendered;
 };
 
-/**
- * Extract actual values from an employee document dynamically from database
- */
 const getEmployeeVariableValues = async (employeeId = null, fallbackUserId = null) => {
   let emp = null;
 
-  // 1. If explicit employeeId provided, find by employeeId
   if (employeeId && mongoose.Types.ObjectId.isValid(employeeId)) {
     emp = await UserModel.findOne({ _id: employeeId, isUserDeleted: { $ne: true } })
       .populate({
@@ -254,7 +240,6 @@ const getEmployeeVariableValues = async (employeeId = null, fallbackUserId = nul
       .populate("designation", "designationName designationTitle");
   }
 
-  // 2. If not found or not provided, try fallback user (e.g. authenticated user)
   if (!emp && fallbackUserId && mongoose.Types.ObjectId.isValid(fallbackUserId)) {
     emp = await UserModel.findOne({ _id: fallbackUserId, isUserDeleted: { $ne: true } })
       .populate({
@@ -265,7 +250,6 @@ const getEmployeeVariableValues = async (employeeId = null, fallbackUserId = nul
       .populate("designation", "designationName designationTitle");
   }
 
-  // 3. If still not found, dynamically find any active employee from database
   if (!emp) {
     emp = await UserModel.findOne({ isUserDeleted: { $ne: true }, role: "employee" })
       .sort({ createdAt: -1 })
@@ -277,7 +261,6 @@ const getEmployeeVariableValues = async (employeeId = null, fallbackUserId = nul
       .populate("designation", "designationName designationTitle");
   }
 
-  // 4. Fallback to any active user in database
   if (!emp) {
     emp = await UserModel.findOne({ isUserDeleted: { $ne: true } })
       .sort({ createdAt: -1 })
@@ -326,7 +309,6 @@ const getEmployeeVariableValues = async (employeeId = null, fallbackUserId = nul
   const formattedMonthly = monthlySalary > 0 ? `₹ ${monthlySalary.toLocaleString("en-IN")}` : "";
   const formattedCtc = annualCtc > 0 ? `₹ ${annualCtc.toLocaleString("en-IN")}` : "";
 
-  // Dynamic reporting manager resolution
   let reportingManagerName = "";
   if (emp?.reportingManager) {
     const trimmedMgr = String(emp.reportingManager).trim();
@@ -346,7 +328,6 @@ const getEmployeeVariableValues = async (employeeId = null, fallbackUserId = nul
       deptHead?.name?.trim() || `${deptHead?.firstName || ""} ${deptHead?.lastName || ""}`.trim() || "";
   }
 
-  // Dynamic work location resolution
   const workLocation = emp?.workLocation?.trim() || hqBranch?.branchName?.trim() || hqBranch?.address?.trim() || "";
 
   return {
@@ -365,10 +346,6 @@ const getEmployeeVariableValues = async (employeeId = null, fallbackUserId = nul
 };
 
 export class DocumentTemplateController {
-  /**
-   * GET /api/documentTemplates/presets or /api/getDocumentTemplatePresets
-   * Returns quick-start preset templates (Screenshot 2, 3, 4)
-   */
   static async getPresets(req, res) {
     try {
       return sendSuccessResponse(res, "Document template presets fetched successfully", {
@@ -381,10 +358,6 @@ export class DocumentTemplateController {
     }
   }
 
-  /**
-   * GET /api/documentTemplates/variables or /api/getDocumentTemplateVariables
-   * Returns available smart variables
-   */
   static async getSmartVariables(req, res) {
     try {
       return sendSuccessResponse(res, "Smart variables fetched successfully", {
@@ -397,11 +370,6 @@ export class DocumentTemplateController {
     }
   }
 
-  /**
-   * GET /api/documentTemplates/getAll or /api/getAllDocumentTemplates
-   * Returns list with tab counts (All, Recruitment, Exit, Legal, Verification)
-   * Only returns templates added by user/admin (no auto-seeded templates)
-   */
   static async getAllTemplates(req, res) {
     try {
       const { category, search, status, page, limit } = req.query;
@@ -411,7 +379,6 @@ export class DocumentTemplateController {
       if (category && category.trim()) {
         const catClean = category.trim().toLowerCase();
         if (catClean !== "all") {
-          // Flexible category matching for short names like "exit" or "legal"
           if (catClean === "exit" || catClean.includes("exit")) {
             filter.category = "Exit Management";
           } else if (catClean === "legal" || catClean.includes("legal")) {
@@ -457,7 +424,6 @@ export class DocumentTemplateController {
 
       const templates = await query;
 
-      // Category Summary Counts for UI Badges (Screenshot 1)
       const baseFilter = {};
       const [allCount, recruitmentCount, exitCount, legalCount, verificationCount, hrOpsCount, generalCount] =
         await Promise.all([
@@ -503,9 +469,6 @@ export class DocumentTemplateController {
     }
   }
 
-  /**
-   * GET /api/documentTemplates/getById/:id or /api/getDocumentTemplateById/:id
-   */
   static async getTemplateById(req, res) {
     try {
       const { id } = req.params;
@@ -533,10 +496,6 @@ export class DocumentTemplateController {
     }
   }
 
-  /**
-   * POST /api/documentTemplates/create or /api/createDocumentTemplate
-   * Create a new document template (Screenshot 2)
-   */
   static async createTemplate(req, res) {
     try {
       const {
@@ -567,7 +526,6 @@ export class DocumentTemplateController {
       let attachmentKey = null;
       let attachmentSize = 0;
 
-      // Handle optional uploaded reference file (PDF / DOCX)
       if (req.file) {
         try {
           const uploadResult = await uploadFile(req.file);
@@ -616,9 +574,6 @@ export class DocumentTemplateController {
     }
   }
 
-  /**
-   * PATCH /api/documentTemplates/update/:id or /api/updateDocumentTemplate/:id
-   */
   static async updateTemplate(req, res) {
     try {
       const { id } = req.params;
@@ -681,7 +636,6 @@ export class DocumentTemplateController {
         template.status = status;
       }
 
-      // Handle replacement file attachment if uploaded
       if (req.file) {
         try {
           if (template.attachmentKey) {
@@ -717,9 +671,6 @@ export class DocumentTemplateController {
     }
   }
 
-  /**
-   * DELETE /api/documentTemplates/delete/:id or /api/deleteDocumentTemplate/:id
-   */
   static async deleteTemplate(req, res) {
     try {
       const { id } = req.params;
@@ -733,7 +684,6 @@ export class DocumentTemplateController {
         return sendNotFoundResponse(res, "Document template not found");
       }
 
-      // 1. Collect and delete all associated AWS S3 assets (attachments, uploaded icon, embedded body images)
       const s3Targets = [];
 
       if (template.attachmentKey) {
@@ -743,7 +693,6 @@ export class DocumentTemplateController {
         s3Targets.push(template.attachmentUrl);
       }
 
-      // Check if icon is an uploaded S3 image/path
       if (
         template.icon &&
         (template.icon.includes(".amazonaws.com") || template.icon.startsWith("uploads/"))
@@ -751,7 +700,6 @@ export class DocumentTemplateController {
         s3Targets.push(template.icon);
       }
 
-      // Check if bodyContent has any S3 image URLs
       if (template.bodyContent && typeof template.bodyContent === "string") {
         const s3Regex = /https:\/\/[a-zA-Z0-9.\-_]+\.amazonaws\.com\/[^\s"'>]+/gi;
         const matchedUrls = template.bodyContent.match(s3Regex);
@@ -773,10 +721,8 @@ export class DocumentTemplateController {
         );
       }
 
-      // 2. Permanently delete from MongoDB Database (Hard delete - completely removed from DB)
       await DocumentTemplateModel.findByIdAndDelete(id);
 
-      // 3. Audit log
       await safeAuditLog(
         req,
         "DELETE_DOCUMENT_TEMPLATE",
@@ -797,10 +743,6 @@ export class DocumentTemplateController {
     }
   }
 
-  /**
-   * POST /api/documentTemplates/preview/:id or /api/previewDocumentTemplate/:id
-   * Preview template with live smart variable replacement
-   */
   static async previewTemplate(req, res) {
     try {
       const { id } = req.params;
@@ -838,10 +780,6 @@ export class DocumentTemplateController {
     }
   }
 
-  /**
-   * POST /api/documentTemplates/generate/:id or /api/generateDocumentTemplate/:id
-   * Generate official letter for employee with all smart variables replaced
-   */
   static async generateDocument(req, res) {
     try {
       const { id } = req.params;

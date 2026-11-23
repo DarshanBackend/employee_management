@@ -18,9 +18,6 @@ import {
   sendNotFoundResponse,
 } from "../utils/Response.utils.js";
 
-/**
- * Helper: Calculate inclusive days between two YYYY-MM-DD date strings
- */
 export const calculateLeaveDays = (fromDateStr, toDateStr, isHalfDay = false) => {
   if (isHalfDay) return 0.5;
 
@@ -35,10 +32,6 @@ export const calculateLeaveDays = (fromDateStr, toDateStr, isHalfDay = false) =>
   return Math.max(1, diffDays);
 };
 
-/**
- * Helper: Parse notice period string into integer days
- * E.g. "2 Days in Advance" -> 2, "7 Days in Advance" -> 7, "Immediate" -> 0
- */
 export const parseNoticeDays = (noticePeriodStr) => {
   if (!noticePeriodStr) return 0;
   const str = String(noticePeriodStr).toLowerCase().trim();
@@ -76,10 +69,6 @@ export const validateCalendarDateString = (dateVal, fieldName = "Date") => {
 };
 
 export class LeaveController {
-  /**
-   * Employee Apply for Leave
-   * POST /api/leave/apply or POST /api/applyLeave
-   */
   static async applyLeave(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -111,7 +100,6 @@ export class LeaveController {
         return sendBadRequestResponse(res, "Reason for leave is required");
       }
 
-      // 1. Resolve Leave Type
       let leaveTypeDoc = null;
       if (leaveTypeId && mongoose.Types.ObjectId.isValid(String(leaveTypeId).trim())) {
         leaveTypeDoc = await LeaveTypeModel.findOne({
@@ -140,8 +128,6 @@ export class LeaveController {
         );
       }
 
-
-      // 2. Validate and Normalize Dates
       const fromVal = validateCalendarDateString(fromDate, "fromDate");
       if (fromVal.error) {
         return sendBadRequestResponse(res, fromVal.error);
@@ -169,7 +155,6 @@ export class LeaveController {
       const formattedFromDate = formatDisplayDate(new Date(fromDateNorm));
       const formattedToDate = formatDisplayDate(new Date(toDateNorm));
 
-      // 3. Resolve Effective Policy Rules (from LeavePolicy or LeaveType)
       const policyDoc = await LeavePolicyModel.findOne({
         leaveType: leaveTypeDoc._id,
         isDeleted: false,
@@ -180,7 +165,6 @@ export class LeaveController {
       const effectiveAccrualMode = policyDoc?.accrualMode || leaveTypeDoc.accrualMode || "Monthly accrual (half day allowed)";
       const effectiveAnnualQuota = policyDoc?.leaveQuota ?? leaveTypeDoc.leaveBalance ?? 0;
 
-      // 4. Notice Period Validation
       const requiredNoticeDays = parseNoticeDays(effectiveNoticePeriod);
       if (requiredNoticeDays > 0) {
         const todayNorm = getNormalizedDateString(new Date());
@@ -201,7 +185,6 @@ export class LeaveController {
         }
       }
 
-      // 5. Half Day Validation
       const isHalf =
         typeof isHalfDay === "boolean"
           ? isHalfDay
@@ -221,10 +204,8 @@ export class LeaveController {
         );
       }
 
-      // 6. Calculate Total Days
       const totalDays = calculateLeaveDays(fromDateNorm, toDateNorm, isHalf);
 
-      // 7. Max Consecutive Days Validation
       if (effectiveMaxConsecutiveDays && totalDays > effectiveMaxConsecutiveDays) {
         return res.status(400).json({
           success: false,
@@ -235,7 +216,6 @@ export class LeaveController {
         });
       }
 
-      // 8. Check for Overlapping Leaves (Pending or Approved)
       const overlappingLeave = await LeaveModel.findOne({
         employee: employeeId,
         status: { $in: ["Pending", "Approved"] },
@@ -255,7 +235,6 @@ export class LeaveController {
         });
       }
 
-      // 9. Check Leave Balance / Quota & Accrual Mode (unless Unpaid Leave or zero quota)
       const isUnpaid =
         leaveTypeDoc.leaveTypeName.toLowerCase().includes("unpaid") ||
         effectiveAnnualQuota === 0;
@@ -265,7 +244,6 @@ export class LeaveController {
         const startOfYear = `${fromYear}-01-01`;
         const endOfYear = `${fromYear}-12-31`;
 
-        // Approved leaves for this employee & leave type in the year
         const approvedLeaves = await LeaveModel.find({
           employee: employeeId,
           leaveType: leaveTypeDoc._id,
@@ -277,7 +255,6 @@ export class LeaveController {
         const annualQuota = effectiveAnnualQuota;
         const remainingAnnualBalance = Math.max(0, annualQuota - usedDays);
 
-        // Overall Annual Quota check
         if (totalDays > remainingAnnualBalance) {
           return res.status(400).json({
             success: false,
@@ -289,7 +266,6 @@ export class LeaveController {
           });
         }
 
-        // Accrual Mode check: "Monthly Accrual" or "Quarterly Accrual"
         const isMonthlyAccrual =
           effectiveAccrualMode &&
           String(effectiveAccrualMode).toLowerCase().includes("monthly");
@@ -298,9 +274,7 @@ export class LeaveController {
           String(effectiveAccrualMode).toLowerCase().includes("quarterly");
 
         if (isMonthlyAccrual && annualQuota > 0) {
-          // Leaves earned per month
           const monthlyRate = annualQuota / 12;
-          // Accrued days up to the target month of the leave
           const accruedDaysUpToMonth = Math.min(
             annualQuota,
             Math.round(monthlyRate * fromMonth * 2) / 2
@@ -322,7 +296,6 @@ export class LeaveController {
             });
           }
         } else if (isQuarterlyAccrual && annualQuota > 0) {
-          // Leaves earned quarterly (every 3 months)
           const currentQuarter = Math.ceil(fromMonth / 3);
           const quarterlyRate = annualQuota / 4;
           const accruedDaysUpToQuarter = Math.min(
@@ -348,7 +321,6 @@ export class LeaveController {
         }
       }
 
-      // 10. Create Leave Application
       const isAutoApproved =
         policyDoc?.approvalWorkflow === "Auto-Approved" ||
         policyDoc?.approvalChain === "Auto-Approved" ||
@@ -395,7 +367,6 @@ export class LeaveController {
 
       const deptName = empUser?.department?.departmentName ? ` (${empUser.department.departmentName})` : "";
 
-      // 1. Send Notification to all Admins (In-app + FCM Push) & Employee Confirmation
       try {
         await Promise.allSettled([
           notifyAdmins({
@@ -443,10 +414,6 @@ export class LeaveController {
     }
   }
 
-  /**
-   * Get Logged-in Employee's Leave Applications
-   * GET /api/leave/myLeaves or GET /api/getMyLeaves
-   */
   static async getMyLeaves(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -510,11 +477,6 @@ export class LeaveController {
     }
   }
 
-  /**
-   * Get Configured Leave Balances for Logged-in Employee
-   * (Screenshot 1: "Configured Leave Balances" cards like Casual Leave 15 / 15 left)
-   * GET /api/leave/myBalances or GET /api/getLeaveBalances
-   */
   static async getMyLeaveBalances(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -536,7 +498,6 @@ export class LeaveController {
       const startOfYear = `${currentYear}-01-01`;
       const endOfYear = `${currentYear}-12-31`;
 
-      // Fetch all approved and pending leaves for this employee for current calendar year
       const employeeLeaves = await LeaveModel.find({
         employee: employeeId,
         status: { $in: ["Approved", "Pending"] },
@@ -622,10 +583,6 @@ export class LeaveController {
     }
   }
 
-  /**
-   * Cancel Leave Application (Employee)
-   * PATCH /api/leave/cancel/:id or DELETE /api/leave/cancel/:id
-   */
   static async cancelLeave(req, res) {
     try {
       const employeeId = req.user?._id;
@@ -684,15 +641,10 @@ export class LeaveController {
     }
   }
 
-  /**
-   * Admin: Get All Leave Applications (Inbox / Manage)
-   * GET /api/leave/allLeaves or GET /api/leave/adminInbox
-   */
   static async getAllLeaves(req, res) {
     try {
       const { status, search, department, page = 1, limit = 10, fromDate, toDate } = req.query;
 
-      // Counters across tabs
       const [allCount, pendingCount, approvedCount, rejectedCount] = await Promise.all([
         LeaveModel.countDocuments({}),
         LeaveModel.countDocuments({ status: "Pending" }),
@@ -774,10 +726,6 @@ export class LeaveController {
     }
   }
 
-  /**
-   * Admin: Approve or Reject Leave Application ("Accept ya to Reject")
-   * PATCH /api/actionLeave/:id or PATCH /api/action/leaves/:id or PATCH /api/action/leaves
-   */
   static async actionLeave(req, res) {
     try {
       const { id: paramId } = req.params;
@@ -820,8 +768,6 @@ export class LeaveController {
         leave.actionBy = req.user?._id;
         leave.actionAt = new Date();
 
-        // 🌟 INTEGRATE WITH ATTENDANCE RECORD 🌟
-        // If the approved leave covers today's date, update today's attendance to "On Leave" or "Half Day"
         const todayStr = getNormalizedDateString();
         if (leave.fromDate <= todayStr && leave.toDate >= todayStr) {
           let attendance = await AttendanceModel.findOne({
@@ -877,7 +823,6 @@ export class LeaveController {
 
       const employeeTargetId = leave.employee?._id || leave.employee;
 
-      // 🌟 Send Notification to the Employee (In-app + FCM Push) 🌟
       try {
         await notifyUser(employeeTargetId, {
           title: isApprove ? "Leave Application Approved 🎉" : "Leave Application Rejected",
@@ -907,10 +852,6 @@ export class LeaveController {
     }
   }
 
-  /**
-   * Get Leave Details By ID
-   * GET /api/leave/getLeaveById/:id
-   */
   static async getLeaveById(req, res) {
     try {
       const { id } = req.params;

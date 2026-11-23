@@ -29,11 +29,11 @@ const LeaveSchema = new mongoose.Schema(
     },
     formattedFromDate: {
       type: String,
-      trim: true, // e.g. "25 Oct 2026"
+      trim: true,
     },
     formattedToDate: {
       type: String,
-      trim: true, // e.g. "26 Oct 2026"
+      trim: true,
     },
     isHalfDay: {
       type: Boolean,

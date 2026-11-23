@@ -758,7 +758,6 @@ export class PayrollController {
       const cycleName = `${targetMonth} ${targetYear}`;
       const availableCycles = monthNames.map((m) => `${m} ${targetYear}`);
 
-      // Filter employees by department if requested
       const employeeFilter = {
         role: "employee",
         isUserDeleted: { $ne: true },
@@ -802,7 +801,6 @@ export class PayrollController {
           const deptName = emp.department?.departmentName || "General";
           const monthlySalary = emp.salary && emp.salary > 0 ? emp.salary : 45000;
 
-          // Check Attendance if records exist for that month
           const attendanceRecords = await AttendanceModel.find({
             employee: emp._id,
             date: { $regex: `^${monthPrefix}` },
@@ -826,7 +824,7 @@ export class PayrollController {
           const computed = computeSalaryForEmployee(monthlySalary, settings, {
             daysWorked,
             totalWorkingDays,
-            includePt: false, // Pre-run deduction in Screenshot 1 is PF (6%) + TDS (2%) = 8%
+            includePt: false,
             basicSalaryPercentage: 50,
             hraPercentage: 40,
           });
@@ -1014,7 +1012,7 @@ export class PayrollController {
         const computed = computeSalaryForEmployee(monthlySalary, settings, {
           daysWorked,
           totalWorkingDays,
-          includePt: false, // In monthly payroll execution, deductions match pre-run (8%)
+          includePt: false,
           basicSalaryPercentage: 50,
           hraPercentage: 40,
         });
@@ -1401,7 +1399,6 @@ export class PayrollController {
       const andConditions = [];
       const payslipMatchConditions = [];
 
-      // Search by employee name or employeeId
       const trimmedSearch = String(search || "").trim();
       let searchRegex = null;
       let matchedUserIdSet = new Set();
@@ -1433,7 +1430,6 @@ export class PayrollController {
         });
       }
 
-      // Filter by department (ID or name)
       const deptParam = String(departmentId || department || "").trim();
       let targetDeptId = null;
       let targetDeptRegex = null;
@@ -1487,7 +1483,6 @@ export class PayrollController {
         if (trimmedSearch) {
           andConditions.push({ payslips: { $elemMatch: payslipMatchConditions[0] } });
         } else {
-          // Department only: match run-level department OR payslip-level department
           andConditions.push({
             $or: [
               ...(targetDeptId ? [{ department: targetDeptId }] : []),
@@ -1497,13 +1492,11 @@ export class PayrollController {
           });
         }
       } else if (payslipMatchConditions.length > 1) {
-        // Both search & department: same employee must match both
         andConditions.push({
           payslips: { $elemMatch: { $and: payslipMatchConditions } },
         });
       }
 
-      // Filter by cycle or month & year
       const cycleParam = String(cycle || "").trim();
       if (cycleParam && cycleParam.toLowerCase() !== "all") {
         andConditions.push({
@@ -1526,7 +1519,6 @@ export class PayrollController {
         }
       }
 
-      // Filter by status
       const statusParam = String(status || "").trim();
       if (statusParam && statusParam.toLowerCase() !== "all") {
         andConditions.push({
@@ -1668,7 +1660,6 @@ export class PayrollController {
         return sendNotFoundResponse(res, "Payroll run not found");
       }
 
-      // If employeeId is provided, update that specific employee's payslip inside the payroll run
       if (employeeId) {
         const targetPayslip = run.payslips.find(
           (p) =>
@@ -1724,7 +1715,6 @@ export class PayrollController {
         );
       }
 
-      // Otherwise, accept or reject the entire payroll run
       const previousStatus = run.status;
       run.status = isAccept ? "Completed" : "Rejected";
       run.remarks = adminRemarks;
