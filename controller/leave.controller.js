@@ -367,10 +367,7 @@ export class LeaveController {
 
       const deptName = empUser?.department?.departmentName ? ` (${empUser.department.departmentName})` : "";
 
-<<<<<<< HEAD
       // 1. Send Notification ONLY to Admins (In-app + FCM Push)
-=======
->>>>>>> cd4c45e775025ef8a070866634ede561b7b11dd3
       try {
         await notifyAdmins({
           title: "New Leave Application",
@@ -828,8 +825,6 @@ export class LeaveController {
       const remarksText = finalRemarks ? ` Reason/Remarks: "${finalRemarks.trim()}".` : "";
 
       // 🌟 Send Notification to the Employee (In-app + FCM Push) 🌟
-      const employeeTargetId = leave.employee?._id || leave.employee;
-
       try {
         await notifyUser(employeeTargetId, {
           title: isApprove ? "Leave Application Approved 🎉" : "Leave Application Rejected",
