@@ -49,22 +49,22 @@ const PayslipSchema = new mongoose.Schema(
 
     cycle: {
       type: String,
-      required: true, // e.g. "April 2026"
+      required: true,
       trim: true,
     },
     month: {
       type: String,
-      required: true, // e.g. "April"
+      required: true,
       trim: true,
     },
     year: {
       type: Number,
-      required: true, // e.g. 2026
+      required: true,
     },
 
     days: {
       type: String,
-      default: "22/22", // worked / total days
+      default: "22/22",
       trim: true,
     },
     workingDays: {
@@ -145,7 +145,7 @@ const PayrollRunSchema = new mongoose.Schema(
   {
     cycle: {
       type: String,
-      required: [true, "Payroll cycle is required"], // e.g. "April 2026"
+      required: [true, "Payroll cycle is required"],
       trim: true,
     },
     month: {

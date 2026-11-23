@@ -237,7 +237,6 @@ export class EmployeeController {
       const rawPassword = password || empId || "Employee@123";
       const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
-      // Resolve Shift from ShiftModel (by ID from shift, shiftId, shiftAndSchedule, or shiftTiming name)
       let selectedShift = null;
       const requestedShiftId =
         bodyData.shift ||
@@ -270,7 +269,6 @@ export class EmployeeController {
           (await ShiftModel.findOne().sort({ createdAt: 1 }));
       }
 
-      // Resolve Salary and Optional Bank Details
       const sDetails =
         typeof bodyData.salaryDetails === "object" && bodyData.salaryDetails !== null
           ? bodyData.salaryDetails
@@ -302,7 +300,6 @@ export class EmployeeController {
               ? parsedSalary - (basicSalary + hra)
               : 0;
 
-      // Optional Bank Details: paymentMethod, bankName, accountNumber, ifscCode
       const salaryCurrency = sDetails.currency || bodyData.currency || "INR";
       const salaryPaymentMethod = sDetails.paymentMethod || bodyData.paymentMethod || "Bank Transfer";
       const bankName = sDetails.bankName || bodyData.bankName || "";
@@ -1003,7 +1000,6 @@ export class EmployeeController {
         employee.phone = bodyData.phoneNumber;
       }
 
-      // Update contactInfo (supporting both nested contactInfo object and flat fields like personalEmail, mobileNumber, addressLine1, city, etc.)
       const contactObj = typeof bodyData.contactInfo === "object" ? bodyData.contactInfo : {};
       const currentContact = employee.contactInfo?.toObject() || {};
       const currentAddress = currentContact.address || {};
@@ -1052,7 +1048,6 @@ export class EmployeeController {
         },
       };
 
-      // Handle shift update (supporting shift, shiftId, or shiftAndSchedule as ID string or object)
       const targetShiftId =
         bodyData.shift ||
         bodyData.shiftId ||
@@ -1115,7 +1110,6 @@ export class EmployeeController {
         };
       }
 
-      // Update emergencyContact (supporting both nested object and flat fields like emergencyContactName, emergencyRelationship, emergencyPhoneNumber, etc.)
       const emergencyObj = typeof bodyData.emergencyContact === "object" ? bodyData.emergencyContact : {};
       const currentEmergency = employee.emergencyContact?.toObject() || {};
 
@@ -1152,7 +1146,6 @@ export class EmployeeController {
         alternatePhone: emergencyAltPhone !== undefined ? String(emergencyAltPhone).trim() : currentEmergency.alternatePhone || "",
       };
 
-      // Update additionalInfo (supporting both nested object and flat fields like employmentNotes)
       const addInfoObj = typeof bodyData.additionalInfo === "object" ? bodyData.additionalInfo : {};
       const currentAddInfo = employee.additionalInfo?.toObject() || {};
 
@@ -1165,7 +1158,6 @@ export class EmployeeController {
         employmentNotes: employmentNotes !== undefined ? String(employmentNotes).trim() : currentAddInfo.employmentNotes || "",
       };
 
-      // Update documents (supporting URLs passed in body)
       if (!employee.documents) {
         employee.documents = {
           panCard: null,
@@ -1194,7 +1186,6 @@ export class EmployeeController {
         });
       }
 
-      // Update Salary & Compensation Details (Optional in update)
       if (bodyData.salary !== undefined && bodyData.salary !== null && String(bodyData.salary).trim() !== "") {
         const num = Number(bodyData.salary);
         if (isNaN(num) || num <= 0) {

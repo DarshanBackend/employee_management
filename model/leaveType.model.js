@@ -36,7 +36,6 @@ const LeaveTypeSchema = new mongoose.Schema(
       trim: true,
       default: "#EF4444",
     },
-    // Organization Leave Policy Rules
     accrualMode: {
       type: String,
       trim: true,

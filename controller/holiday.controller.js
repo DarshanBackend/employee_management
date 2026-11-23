@@ -577,7 +577,7 @@ export class HolidayController {
       if (parsedMonth && parsedMonth.error) {
         return sendBadRequestResponse(res, parsedMonth.error);
       }
-      const monthNum = parsedMonth; // number 1-12 or null (all months)
+      const monthNum = parsedMonth;
 
       const dayNum = rawDay ? parseInt(rawDay, 10) : null;
       if (dayNum !== null && (isNaN(dayNum) || dayNum < 1 || dayNum > 31)) {
@@ -625,7 +625,6 @@ export class HolidayController {
           ];
         }
       } else {
-        // No specific month selected -> return all holidays for the year
         const yearStartStr = `${yearNum}-01-01`;
         const yearEndStr = `${yearNum}-12-31`;
 

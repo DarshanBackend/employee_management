@@ -9,9 +9,6 @@ import {
   sendNotFoundResponse,
 } from "../utils/Response.utils.js";
 
-/**
- * Helper: Parse integer days from number or string (e.g. "5 Days" -> 5)
- */
 export const parseDaysFromInput = (input, defaultVal = 0) => {
   if (input === undefined || input === null || input === "") return defaultVal;
   if (typeof input === "number") return isNaN(input) ? defaultVal : input;
@@ -19,9 +16,6 @@ export const parseDaysFromInput = (input, defaultVal = 0) => {
   return match ? parseInt(match[0], 10) : defaultVal;
 };
 
-/**
- * Helper: Normalize accrual mode string matching UI dropdown
- */
 export const normalizeAccrualMode = (input) => {
   if (!input) return "Annual Upfront (All leaves credited upfront at year start)";
   const str = String(input).toLowerCase();
@@ -37,9 +31,6 @@ export const normalizeAccrualMode = (input) => {
   return String(input).trim();
 };
 
-/**
- * Helper: Normalize approval workflow matching UI dropdown
- */
 export const normalizeApprovalWorkflow = (input) => {
   if (!input) return "Reporting Manager";
   const str = String(input).trim();
@@ -52,10 +43,6 @@ export const normalizeApprovalWorkflow = (input) => {
 };
 
 export class LeavePolicyController {
-  /**
-   * Add / Configure Leave Policy
-   * POST /api/addLeavePolicy
-   */
   static async addLeavePolicy(req, res) {
     try {
       const {
@@ -63,30 +50,24 @@ export class LeavePolicyController {
         leaveType: leaveTypeInput,
         policyTitle,
 
-        // Quota
         annualLeaveQuota,
         leaveQuota,
         annualAllowedDays,
         leaveBalance,
 
-        // Accrual Mode
         accrualMode,
 
-        // Carry Forward Cap
         isCarryForwardEnabled,
         carryForward,
         maxCarryForwardDays,
         carryForwardCap,
 
-        // Advance Notice Period
         advanceNoticePeriod,
         advanceNoticeDays,
         noticePeriod,
 
-        // Max Consecutive Days
         maxConsecutiveDays,
 
-        // Approval Workflow
         approvalWorkflow,
         approvalChain,
 
@@ -121,7 +102,6 @@ export class LeavePolicyController {
         );
       }
 
-      // 1. Quota
       const rawQuota =
         annualLeaveQuota !== undefined
           ? annualLeaveQuota
@@ -140,10 +120,8 @@ export class LeavePolicyController {
         return sendBadRequestResponse(res, "Annual Leave Quota must be a non-negative number!");
       }
 
-      // 2. Accrual Mode
       const finalAccrualMode = normalizeAccrualMode(accrualMode);
 
-      // 3. Carry Forward Cap
       let isCFEnabled = true;
       if (isCarryForwardEnabled !== undefined) {
         isCFEnabled =
@@ -167,7 +145,6 @@ export class LeavePolicyController {
         finalCFCap = maxCFDays > 0 ? `${maxCFDays} Days` : "5 Days";
       }
 
-      // 4. Advance Notice Period
       const rawNotice =
         advanceNoticeDays !== undefined
           ? advanceNoticeDays
@@ -178,19 +155,15 @@ export class LeavePolicyController {
       const finalNoticePeriod =
         finalNoticeDays === 0 ? "0 Days (Same-day)" : `${finalNoticeDays} Days Before`;
 
-      // 5. Max Consecutive Days
       const finalMaxConsecutive = parseDaysFromInput(maxConsecutiveDays, 5);
 
-      // 6. Approval Workflow
       const finalApproval = normalizeApprovalWorkflow(approvalWorkflow || approvalChain);
 
-      // 7. Policy Title
       const cleanTitle =
         policyTitle && String(policyTitle).trim()
           ? String(policyTitle).trim()
           : leaveTypeDoc.leaveTypeName;
 
-      // Check if policy already exists for this Leave Type
       let policy = await LeavePolicyModel.findOne({
         leaveType: leaveTypeDoc._id,
         isDeleted: false,
@@ -211,7 +184,6 @@ export class LeavePolicyController {
         if (status && ["Active", "Inactive"].includes(status)) policy.status = status;
         await policy.save();
 
-        // Sync quota to leaveTypeDoc for convenience
         leaveTypeDoc.leaveBalance = quotaNum;
         await leaveTypeDoc.save();
 
@@ -243,7 +215,6 @@ export class LeavePolicyController {
         status: ["Active", "Inactive"].includes(status) ? status : "Active",
       });
 
-      // Sync quota to leaveTypeDoc
       leaveTypeDoc.leaveBalance = quotaNum;
       await leaveTypeDoc.save();
 
@@ -263,10 +234,6 @@ export class LeavePolicyController {
     }
   }
 
-  /**
-   * Get All Leave Policies (Organization Leave Rules screen)
-   * GET /api/getAllLeavePolicies
-   */
   static async getAllLeavePolicies(req, res) {
     try {
       const { search, status, page, limit, sortBy = "createdAt", order = "asc" } = req.query;
@@ -325,10 +292,6 @@ export class LeavePolicyController {
     }
   }
 
-  /**
-   * Get Leave Policy By ID
-   * GET /api/getLeavePolicyById/:id
-   */
   static async getLeavePolicyById(req, res) {
     try {
       const { id } = req.params;
@@ -353,40 +316,30 @@ export class LeavePolicyController {
     }
   }
 
-  /**
-   * Update / Configure Leave Policy
-   * PATCH /api/configureLeavePolicy/:id or PATCH /api/updateLeavePolicy/:id
-   */
   static async updateLeavePolicy(req, res) {
     try {
       const { id } = req.params;
       const {
         policyTitle,
 
-        // Quota
         annualLeaveQuota,
         leaveQuota,
         annualAllowedDays,
         leaveBalance,
 
-        // Accrual Mode
         accrualMode,
 
-        // Carry Forward Cap
         isCarryForwardEnabled,
         carryForward,
         maxCarryForwardDays,
         carryForwardCap,
 
-        // Advance Notice Period
         advanceNoticePeriod,
         advanceNoticeDays,
         noticePeriod,
 
-        // Max Consecutive Days
         maxConsecutiveDays,
 
-        // Approval Workflow
         approvalWorkflow,
         approvalChain,
 
@@ -410,7 +363,6 @@ export class LeavePolicyController {
         policy.policyTitle = String(policyTitle).trim();
       }
 
-      // Quota
       const rawQuota =
         annualLeaveQuota !== undefined
           ? annualLeaveQuota
@@ -427,18 +379,15 @@ export class LeavePolicyController {
         }
         policy.leaveQuota = quotaNum;
 
-        // Sync to leaveType
         if (policy.leaveType) {
           await LeaveTypeModel.findByIdAndUpdate(policy.leaveType, { leaveBalance: quotaNum });
         }
       }
 
-      // Accrual Mode
       if (accrualMode !== undefined) {
         policy.accrualMode = normalizeAccrualMode(accrualMode);
       }
 
-      // Carry Forward
       if (isCarryForwardEnabled !== undefined || carryForward !== undefined) {
         const isCF =
           isCarryForwardEnabled !== undefined
@@ -469,7 +418,6 @@ export class LeavePolicyController {
         }
       }
 
-      // Advance Notice Period
       if (
         advanceNoticeDays !== undefined ||
         advanceNoticePeriod !== undefined ||
@@ -487,13 +435,11 @@ export class LeavePolicyController {
           parsedNotice === 0 ? "0 Days (Same-day)" : `${parsedNotice} Days Before`;
       }
 
-      // Max Consecutive Days
       if (maxConsecutiveDays !== undefined) {
         const parsedMCD = parseDaysFromInput(maxConsecutiveDays, 5);
         if (parsedMCD > 0) policy.maxConsecutiveDays = parsedMCD;
       }
 
-      // Approval Workflow
       if (approvalWorkflow !== undefined || approvalChain !== undefined) {
         const finalApproval = normalizeApprovalWorkflow(approvalWorkflow || approvalChain);
         policy.approvalWorkflow = finalApproval;
@@ -518,10 +464,6 @@ export class LeavePolicyController {
     }
   }
 
-  /**
-   * Delete Leave Policy (Hard delete directly from database)
-   * DELETE /api/deleteLeavePolicy/:id
-   */
   static async deleteLeavePolicy(req, res) {
     try {
       const { id } = req.params;

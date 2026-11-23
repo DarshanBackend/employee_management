@@ -7,7 +7,6 @@ const AttendanceSchema = new mongoose.Schema(
       ref: "User",
       required: [true, "Employee is required"],
     },
-    // Normalized date format: YYYY-MM-DD
     date: {
       type: String,
       required: [true, "Date (YYYY-MM-DD) is required"],
@@ -15,7 +14,7 @@ const AttendanceSchema = new mongoose.Schema(
     },
     formattedDate: {
       type: String,
-      trim: true, // e.g. "08 Oct 2026"
+      trim: true,
     },
     shift: {
       type: mongoose.Schema.Types.ObjectId,
@@ -29,7 +28,7 @@ const AttendanceSchema = new mongoose.Schema(
     checkInDisplay: {
       type: String,
       default: null,
-      trim: true, // e.g. "09:30 AM"
+      trim: true,
     },
     checkOutTime: {
       type: Date,
@@ -38,7 +37,7 @@ const AttendanceSchema = new mongoose.Schema(
     checkOutDisplay: {
       type: String,
       default: null,
-      trim: true, // e.g. "06:30 PM"
+      trim: true,
     },
     status: {
       type: String,
@@ -64,7 +63,7 @@ const AttendanceSchema = new mongoose.Schema(
     },
     requiredWorkMinutes: {
       type: Number,
-      default: 540, // 9 hours (or configured shift duration)
+      default: 540,
     },
     earliestAllowedCheckOut: {
       type: Date,
@@ -73,7 +72,7 @@ const AttendanceSchema = new mongoose.Schema(
     earliestAllowedCheckOutDisplay: {
       type: String,
       default: null,
-      trim: true, // e.g. "06:10 PM"
+      trim: true,
     },
     isEarlyOutApproved: {
       type: Boolean,
@@ -82,7 +81,7 @@ const AttendanceSchema = new mongoose.Schema(
     approvedEarlyOutTime: {
       type: String,
       default: null,
-      trim: true, // e.g. "03:25 PM"
+      trim: true,
     },
     leaveRecord: {
       type: mongoose.Schema.Types.ObjectId,
@@ -93,7 +92,6 @@ const AttendanceSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    // Tracker & Break Automation Fields
     trackerStatus: {
       type: String,
       enum: [

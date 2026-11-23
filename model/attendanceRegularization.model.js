@@ -7,7 +7,6 @@ const AttendanceRegularizationSchema = new mongoose.Schema(
       ref: "User",
       required: [true, "Employee is required"],
     },
-    // YYYY-MM-DD
     date: {
       type: String,
       required: [true, "Date is required"],
@@ -15,7 +14,7 @@ const AttendanceRegularizationSchema = new mongoose.Schema(
     },
     formattedDate: {
       type: String,
-      trim: true, // e.g. "08 Oct 2026"
+      trim: true,
     },
     correctionType: {
       type: String,

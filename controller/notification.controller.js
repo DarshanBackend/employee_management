@@ -351,10 +351,6 @@ export class NotificationController {
     }
   }
 
-  /**
-   * Diagnostic API: Test Push Notification to device
-   * POST /api/notifications/test-push
-   */
   static async testPushNotification(req, res) {
     try {
       const { fcmToken, token, title = "Test Push Notification", body = "This is a test notification from server! 🔔", data = {} } = req.body;
@@ -397,4 +393,3 @@ export class NotificationController {
     }
   }
 }
-

@@ -10,7 +10,6 @@ import {
   parseTimeToMinutes,
 } from "../controller/attendance.controller.js";
 
-// Helper: Combine Date string and Time string, accounting for overnight shift wrap past midnight
 export const combineDateAndTimeWithShift = (dateStr, timeStr, shiftStartTime = null) => {
   try {
     const [year, month, day] = dateStr.split("-").map(Number);
@@ -21,7 +20,6 @@ export const combineDateAndTimeWithShift = (dateStr, timeStr, shiftStartTime = n
 
     if (shiftStartTime) {
       const shiftStartMins = parseTimeToMinutes(shiftStartTime);
-      // If shift starts in evening/night (> 12:00 PM) and this break time is in early morning (< 12:00 PM)
       if (shiftStartMins > 720 && mins < shiftStartMins && mins < 720) {
         d.setDate(d.getDate() + 1);
       }
@@ -32,7 +30,6 @@ export const combineDateAndTimeWithShift = (dateStr, timeStr, shiftStartTime = n
   }
 };
 
-// Helper: Format minutes from midnight to "hh:mm AM/PM"
 export const formatMinutesToTime = (totalMinutes) => {
   let mins = Math.round(totalMinutes) % (24 * 60);
   if (mins < 0) mins += 24 * 60;
@@ -44,24 +41,6 @@ export const formatMinutesToTime = (totalMinutes) => {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${ampm}`;
 };
 
-/**
- * Standardize and extract today's breaks from an employee's assigned shift
- * or fall back to default shift / attendance rules.
- * 
- * DYNAMIC NAMING RULES:
- * 1. Big / Main Break:
- *    - 11:00 AM to 03:30 PM: "Lunch Break" (breakType: "Lunch Break")
- *    - 06:00 PM to 10:30 PM: "Dinner Break" (breakType: "Dinner Break")
- *    - 10:30 PM to 06:00 AM: "Night Meal Break" (breakType: "Meal Break")
- *    - Other: "Meal Break" (breakType: "Meal Break")
- *    - Or if customized by admin: shift.breakTime.name
- * 2. Tea Breaks:
- *    - Breaks occurring BEFORE the main break:
- *      "Before Break 1", "Before Break 2", etc.
- *    - Breaks occurring AFTER the main break:
- *      "After Break 1", "After Break 2", etc.
- *    - NEVER generic "Morning Tea Break" / "Evening Tea Break" on night or afternoon shifts!
- */
 export const extractBreaksFromShift = (shift = null) => {
   const breaksList = [];
 
@@ -69,7 +48,6 @@ export const extractBreaksFromShift = (shift = null) => {
   const shiftEndTime = shift?.endTime || "06:00 PM";
   const shiftStartMins = parseTimeToMinutes(shiftStartTime);
 
-  // 1. Resolve Main Meal Break (Big Break)
   const breakTime = shift?.breakTime || {};
   const mainBreakStartTime = breakTime.startTime || "01:00 PM";
   const mainBreakEndTime = breakTime.endTime || "02:00 PM";
@@ -87,15 +65,12 @@ export const extractBreaksFromShift = (shift = null) => {
     mainBreakName === "Meal Break"
   ) {
     if (mainStartMins >= 660 && mainStartMins < 930) {
-      // 11:00 AM to 03:30 PM
       mainBreakName = "Lunch Break";
       mainBreakType = "Lunch Break";
     } else if (mainStartMins >= 1080 && mainStartMins < 1350) {
-      // 06:00 PM to 10:30 PM
       mainBreakName = "Dinner Break";
       mainBreakType = "Dinner Break";
     } else if (mainStartMins >= 1350 || mainStartMins < 360) {
-      // 10:30 PM to 06:00 AM (Night Shift)
       mainBreakName = "Night Meal Break";
       mainBreakType = "Meal Break";
     } else {
@@ -125,11 +100,9 @@ export const extractBreaksFromShift = (shift = null) => {
     lateResumeMinutes: 0,
   };
 
-  // Calculate main break offset from shift start
   let mainBreakOffset = mainStartMins - shiftStartMins;
   if (mainBreakOffset < 0) mainBreakOffset += 24 * 60;
 
-  // 2. Resolve Tea Breaks
   const beforeBreaks = [];
   const afterBreaks = [];
 
@@ -166,7 +139,6 @@ export const extractBreaksFromShift = (shift = null) => {
       }
     }
   } else if (shift?.teaBreakCount !== undefined && Number(shift?.teaBreakCount) > 0) {
-    // Only generate tea breaks if explicitly configured with teaBreakCount > 0
     const defaultTeaDuration = Number(shift?.teaBreakDuration) || 15;
     const count = Number(shift.teaBreakCount);
 
@@ -205,16 +177,11 @@ export const extractBreaksFromShift = (shift = null) => {
       });
     }
   } else {
-    // Tea break is NOT compulsory! If a shift has 0 tea breaks or no tea breaks configured,
-    // do NOT add any tea breaks. Only the main meal break will exist.
   }
 
-  // Sort beforeBreaks chronologically by offset
   beforeBreaks.sort((a, b) => a.offset - b.offset);
-  // Sort afterBreaks chronologically by offset
   afterBreaks.sort((a, b) => a.offset - b.offset);
 
-  // Assign clean dynamic names: "Before Break 1", "Before Break 2", etc.
   beforeBreaks.forEach((b, idx) => {
     breaksList.push({
       breakType: "Tea Break",
@@ -233,13 +200,11 @@ export const extractBreaksFromShift = (shift = null) => {
     });
   });
 
-  // Push the main meal break
   breaksList.push({
     ...mainBreakObj,
     offset: mainBreakOffset,
   });
 
-  // Assign clean dynamic names: "After Break 1", "After Break 2", etc.
   afterBreaks.forEach((b, idx) => {
     breaksList.push({
       breakType: "Tea Break",
@@ -258,10 +223,8 @@ export const extractBreaksFromShift = (shift = null) => {
     });
   });
 
-  // Sort all breaks chronologically by offset from shift start
   breaksList.sort((a, b) => a.offset - b.offset);
 
-  // Clean up temporary offset property
   breaksList.forEach((b) => {
     delete b.offset;
   });
@@ -269,20 +232,9 @@ export const extractBreaksFromShift = (shift = null) => {
   return breaksList;
 };
 
-/**
- * Synchronize and evaluate break auto-stop and late restart penalties for an attendance record.
- * 
- * CORE RULES:
- * 1. When break or tea break start time arrives, tracker AUTO STOPS at that scheduled time.
- * 2. When break finishes, tracker DOES NOT AUTO START ("auto start no thavu joy").
- * 3. Tracker stays stopped until the employee manually starts it.
- * 4. If employee starts tracker late after break finish time, the late time is added at the end
- *    ("last ma add thy jase") -> earliestAllowedCheckOut is extended by that late duration!
- */
 export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Date()) => {
   if (!attendance) return { modified: false };
 
-  // If already checked out, tracker is completed
   if (attendance.checkOutTime) {
     if (attendance.trackerStatus !== "COMPLETED") {
       attendance.trackerStatus = "COMPLETED";
@@ -291,7 +243,6 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
     return { modified: false };
   }
 
-  // If checkIn not yet recorded, tracker not started
   if (!attendance.checkInTime) {
     if (attendance.trackerStatus !== "NOT_STARTED") {
       attendance.trackerStatus = "NOT_STARTED";
@@ -302,13 +253,11 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
 
   let modified = false;
 
-  // Ensure breaks array is populated
   if (!attendance.breaks || attendance.breaks.length === 0) {
     attendance.breaks = extractBreaksFromShift(shift);
     modified = true;
   }
 
-  // Standardize existing legacy names if present ("Morning Tea Break" -> "Before Break 1", "Evening Tea Break" -> "After Break 1")
   if (Array.isArray(attendance.breaks)) {
     for (const brk of attendance.breaks) {
       if (brk.name === "Morning Tea Break") {
@@ -321,7 +270,6 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
     }
   }
 
-  // Initialize original checkout time if not already set
   if (!attendance.originalEarliestAllowedCheckOut) {
     const checkInDate = new Date(attendance.checkInTime);
     const reqMinutes = attendance.requiredWorkMinutes || 540;
@@ -340,8 +288,6 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
     const startDt = combineDateAndTimeWithShift(attendanceDateStr, brk.scheduledStartTime, shiftStartTime);
     const endDt = combineDateAndTimeWithShift(attendanceDateStr, brk.scheduledEndTime, shiftStartTime);
 
-    // Auto-repair mistakenly modified future scheduled breaks
-    // (e.g. if a manual pause mistakenly marked Lunch Break or Evening Tea Break as Completed or Active before its time)
     if (now < startDt && (brk.autoStopped === false || brk.status !== "Scheduled")) {
       brk.status = "Scheduled";
       brk.autoStopped = false;
@@ -353,12 +299,10 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
       modified = true;
     }
 
-    // Case 1: Break has already been manually completed by employee
     if (brk.status === "Completed" || brk.resumedAt) {
       continue;
     }
 
-    // Case 2: Currently DURING this scheduled break time
     if (now >= startDt && now < endDt) {
       if (brk.status !== "Active") {
         brk.status = "Active";
@@ -388,9 +332,7 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
       break;
     }
 
-    // Case 3: Scheduled break has FINISHED, but employee has NOT yet started/resumed tracker!
     if (now >= endDt) {
-      // Auto-stop at break start time if not previously marked
       if (!brk.stoppedAt) {
         brk.autoStopped = true;
         brk.stoppedAt = startDt;
@@ -403,7 +345,6 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
         modified = true;
       }
 
-      // DO NOT AUTO-START! Tracker must remain stopped until employee manually starts it.
       if (attendance.trackerStatus !== "BREAK_ENDED_PENDING_START") {
         attendance.trackerStatus = "BREAK_ENDED_PENDING_START";
         modified = true;
@@ -427,11 +368,9 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
     }
   }
 
-  // Update activeBreak field
   const currentActiveBreak = activeBreakFound || pendingResumeBreakFound || null;
   attendance.activeBreak = currentActiveBreak;
 
-  // If not currently on break and not pending resume after break
   if (!activeBreakFound && !pendingResumeBreakFound) {
     if (attendance.trackerStatus === "ON_BREAK" || attendance.trackerStatus === "BREAK_ENDED_PENDING_START") {
       attendance.trackerStatus = "RUNNING";
@@ -440,10 +379,8 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
       attendance.trackerStatus = "RUNNING";
       modified = true;
     }
-    // If trackerStatus is "PAUSED", preserve it!
   }
 
-  // Sum up all locked-in late minutes from completed breaks
   let sumCompletedLateMinutes = 0;
   for (const brk of attendance.breaks) {
     if (brk.status === "Completed" && brk.lateResumeMinutes > 0) {
@@ -456,7 +393,6 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
     modified = true;
   }
 
-  // Recalculate earliest allowed check-out time (including penalty delay + manual pauses)
   const baseCheckout = new Date(attendance.originalEarliestAllowedCheckOut || attendance.earliestAllowedCheckOut);
   const totalExtraMinutes = sumCompletedLateMinutes + (attendance.totalManualPauseMinutes || 0);
   const updatedEarliestCheckout = new Date(baseCheckout.getTime() + totalExtraMinutes * 60000);
@@ -470,7 +406,6 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
     modified = true;
   }
 
-  // Calculate actual working minutes (excluding stopped break durations, late delay, and manual pauses)
   const checkInDt = new Date(attendance.checkInTime);
   const totalElapsed = Math.max(0, Math.floor((now.getTime() - checkInDt.getTime()) / 60000));
 
@@ -480,7 +415,6 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
     const eDt = combineDateAndTimeWithShift(attendanceDateStr, brk.scheduledEndTime, shiftStartTime);
 
     if (brk.status === "Completed") {
-      // If actual stoppedAt and resumedAt are recorded, deduct actual duration
       if (brk.stoppedAt && brk.resumedAt) {
         const actualBreakMins = Math.max(
           0,
@@ -491,17 +425,14 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
         totalDeductedBreakTime += (brk.scheduledDurationMinutes || 15) + (brk.lateResumeMinutes || 0);
       }
     } else if (brk.status === "Active" && now >= sDt) {
-      // Currently on break: deduct elapsed time spent on this break so far
       const elapsedOnBreak = Math.max(0, Math.floor((now.getTime() - sDt.getTime()) / 60000));
       totalDeductedBreakTime += elapsedOnBreak;
     } else if (brk.status === "Pending Resume" && now >= eDt) {
-      // Break finished, awaiting employee start: deduct full break duration + pending delay
       const overdueDelay = Math.max(0, Math.floor((now.getTime() - eDt.getTime()) / 60000));
       totalDeductedBreakTime += (brk.scheduledDurationMinutes || 15) + overdueDelay;
     }
   }
 
-  // Deduct manual pause time (completed pauses + active pause if currently paused)
   let totalManualPauseTime = attendance.totalManualPauseMinutes || 0;
   if (attendance.trackerStatus === "PAUSED" && attendance.activePause?.pausedAt) {
     const activePauseElapsed = Math.max(
@@ -523,17 +454,6 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
   return { modified, activeBreak: currentActiveBreak };
 };
 
-/**
- * Handle manual employee start / resume of tracker after scheduled break or manual pause.
- * 1. Resuming from a MANUAL PAUSE:
- *    - Closes activePause, calculates pause duration, adds to totalManualPauseMinutes.
- *    - Extends shift earliestAllowedCheckOut by manual pause duration.
- *    - Does NOT touch scheduled breaks!
- * 2. Resuming from a SCHEDULED BREAK:
- *    - Finds active/pending scheduled break, calculates late penalty if after scheduledEndTime.
- *    - Marks scheduled break Completed (autoStopped remains true).
- *    - Extends shift checkout time ("last ma add thy jase").
- */
 export const resumeEmployeeTracker = async (attendance, now = new Date(), shiftStartTime = null) => {
   const attendanceDateStr = attendance.date;
 
@@ -550,7 +470,6 @@ export const resumeEmployeeTracker = async (attendance, now = new Date(), shiftS
   let penaltyMessage = "";
   let resumedBreak = null;
 
-  // CASE A: Resuming from a MANUAL PAUSE
   if (attendance.trackerStatus === "PAUSED" || attendance.activePause?.pausedAt) {
     resumedType = "MANUAL_PAUSE";
     const pauseStart = attendance.activePause?.pausedAt
@@ -561,7 +480,6 @@ export const resumeEmployeeTracker = async (attendance, now = new Date(), shiftS
       pausedMinutes = Math.max(0, Math.floor((now.getTime() - pauseStart.getTime()) / 60000));
     }
 
-    // Find and update the open manual pause entry
     const openPause = attendance.manualPauses
       .slice()
       .reverse()
@@ -582,16 +500,13 @@ export const resumeEmployeeTracker = async (attendance, now = new Date(), shiftS
         ? `Resumed tracker after ${pausedMinutes} min manual pause (${pauseReason}). ${pausedMinutes} min(s) added to shift checkout time.`
         : `Resumed tracker from manual pause (${pauseReason}).`;
   }
-  // CASE B: Resuming from a SCHEDULED BREAK
   else {
     resumedType = "SCHEDULED_BREAK";
 
-    // Find the break that was active or pending resume
     let targetBreak = attendance.breaks.find(
       (b) => b && (b.status === "Pending Resume" || b.status === "Active")
     );
 
-    // If no break explicitly marked Active/Pending Resume, look for any break whose startTime has passed and hasn't resumed
     if (!targetBreak) {
       targetBreak = attendance.breaks.find((b) => {
         if (!b || b.status === "Completed" || b.resumedAt) return false;
@@ -605,7 +520,6 @@ export const resumeEmployeeTracker = async (attendance, now = new Date(), shiftS
       if (targetBreak.scheduledEndTime) {
         const endDt = combineDateAndTimeWithShift(attendanceDateStr, targetBreak.scheduledEndTime, shiftStartTime);
         if (now > endDt) {
-          // Employee started tracker late after the scheduled break finished!
           lateMinutes = Math.floor((now.getTime() - endDt.getTime()) / 60000);
         }
       }
@@ -622,7 +536,6 @@ export const resumeEmployeeTracker = async (attendance, now = new Date(), shiftS
       }
     }
 
-    // Lock in new total late penalty from all completed scheduled breaks
     let totalLate = 0;
     for (const b of attendance.breaks) {
       if (b.status === "Completed" && b.lateResumeMinutes > 0) {
@@ -633,7 +546,6 @@ export const resumeEmployeeTracker = async (attendance, now = new Date(), shiftS
     attendance.activeBreak = null;
   }
 
-  // Recalculate shift checkout time with all delays (break late penalty + manual pause minutes)
   const baseCheckout = new Date(
     attendance.originalEarliestAllowedCheckOut || attendance.earliestAllowedCheckOut
   );
@@ -644,7 +556,6 @@ export const resumeEmployeeTracker = async (attendance, now = new Date(), shiftS
   attendance.earliestAllowedCheckOut = updatedEarliestCheckout;
   attendance.earliestAllowedCheckOutDisplay = formatTimeDisplay(updatedEarliestCheckout);
 
-  // Resume tracker status
   attendance.trackerStatus = "RUNNING";
   attendance.trackerLastStartedAt = now;
 
@@ -670,11 +581,6 @@ export const resumeEmployeeTracker = async (attendance, now = new Date(), shiftS
   };
 };
 
-/**
- * Handle manual employee pause of tracker (for personal / another reason)
- * IMPORTANT: DOES NOT TOUCH SCHEDULED BREAKS (Tea Break, Lunch Break)!
- * Scheduled breaks only trigger when auto-stopped at their scheduled time.
- */
 export const pauseEmployeeTracker = async (attendance, reason = "Manual Pause", now = new Date()) => {
   attendance.trackerStatus = "PAUSED";
 
@@ -698,9 +604,6 @@ export const pauseEmployeeTracker = async (attendance, reason = "Manual Pause", 
   }
   attendance.manualPauses.push(pauseRecord);
 
-  // Scheduled breaks (attendance.breaks) remain completely untouched!
-  // attendance.activeBreak remains null or untouched.
-
   await attendance.save();
   return {
     success: true,
@@ -710,10 +613,6 @@ export const pauseEmployeeTracker = async (attendance, reason = "Manual Pause", 
   };
 };
 
-/**
- * Background Cron Job: Runs every minute to auto-stop tracker when break starts,
- * and ensure tracker stays stopped when break finishes without auto-starting.
- */
 let cronTask = null;
 
 export const initBreakTrackerCron = (io = null) => {
@@ -723,13 +622,11 @@ export const initBreakTrackerCron = (io = null) => {
 
   console.log("⏱️ Initializing Auto-Break & Late Penalty Tracker Cron Job (every minute)...");
 
-  // Run every minute: "* * * * *"
   cronTask = cron.schedule("* * * * *", async () => {
     try {
       const todayDate = getNormalizedDateString();
       const now = new Date();
 
-      // Find all active attendance records for today (checked in, not checked out)
       const openAttendances = await AttendanceModel.find({
         date: todayDate,
         checkInTime: { $ne: null },
