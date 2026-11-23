@@ -349,6 +349,12 @@ export class AuthController {
         });
       }
 
+      const inputFcmToken = req.body?.fcmToken || req.body?.fcm_token;
+      if (inputFcmToken && typeof inputFcmToken === "string" && inputFcmToken.trim()) {
+        user.fcmToken = inputFcmToken.trim();
+        await user.save();
+      }
+
       const token = jwt.sign(
         {
           id: user._id,

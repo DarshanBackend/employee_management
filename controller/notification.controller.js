@@ -342,5 +342,51 @@ export class NotificationController {
       return sendErrorResponse(res, 500, "Failed to clear notifications", error);
     }
   }
+
+  /**
+   * Diagnostic API: Test Push Notification to device
+   * POST /api/notifications/test-push
+   */
+  static async testPushNotification(req, res) {
+    try {
+      const { fcmToken, token, title = "Test Push Notification", body = "This is a test notification from server! 🔔", data = {} } = req.body;
+      const targetToken = fcmToken || token || req.user?.fcmToken;
+
+      if (!targetToken) {
+        return sendBadRequestResponse(
+          res,
+          "No FCM token provided. Either pass 'fcmToken' in body or make sure the logged-in user has an fcmToken registered."
+        );
+      }
+
+      const { sendPushNotification } = await import("../utils/notification.sender.js");
+      const result = await sendPushNotification(
+        String(targetToken).trim(),
+        String(title).trim(),
+        String(body).trim(),
+        data
+      );
+
+      if (result && result.success) {
+        return sendSuccessResponse(res, "Test push notification sent successfully to device!", {
+          tokenUsed: String(targetToken).substring(0, 30) + "...",
+          messageId: result.messageId,
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: "Failed to deliver push notification to device",
+        error: result?.error || "FCM Delivery Failed",
+        code: result?.code || "FCM_ERROR",
+        hint: result?.code === "INVALID_TOKEN"
+          ? "The FCM token is invalid or expired. The mobile app must generate a fresh token using FirebaseMessaging.instance.getToken() and send it to POST /api/auth/update-fcm-token."
+          : "Check Firebase credentials or notification permissions on the Android device.",
+      });
+    } catch (error) {
+      console.error("Test Push Notification Error:", error);
+      return sendErrorResponse(res, 500, "Test push failed", error);
+    }
+  }
 }
 

@@ -53,6 +53,9 @@ export const sendPushNotification = async (token, title, body, data = {}) => {
 
     try {
         const stringifiedData = stringifyData({
+            title: String(title || ''),
+            body: String(body || ''),
+            message: String(body || ''),
             ...data,
             click_action: "FLUTTER_NOTIFICATION_CLICK",
             sound: "default",
@@ -72,6 +75,8 @@ export const sendPushNotification = async (token, title, body, data = {}) => {
                     sound: 'default',
                     channelId: 'high_importance_channel',
                     priority: 'high',
+                    defaultSound: true,
+                    defaultVibrateTimings: true,
                 }
             },
             apns: {
@@ -93,12 +98,15 @@ export const sendPushNotification = async (token, title, body, data = {}) => {
 
         const response = await admin.messaging().send(message);
         console.log("Notification sent successfully. Message ID:", response);
-        return true;
+        return { success: true, messageId: response };
     } catch (error) {
         console.error("Error sending notification:", error.code, error.message);
         if (error.code === 'messaging/registration-token-not-registered') {
-            console.warn("Token is invalid/expired, consider removing it from DB.");
-            return 'INVALID_TOKEN';
+            console.warn("Token is invalid/expired. Clearing invalid token from DB:", token.substring(0, 25));
+            import('../model/user.model.js').then(({ default: UserModel }) => {
+                UserModel.updateMany({ fcmToken: token }, { fcmToken: null }).catch(() => {});
+            }).catch(() => {});
+            return { success: false, code: 'INVALID_TOKEN', error: error.message };
         }
         if (error.code === 'messaging/invalid-argument') {
             console.error("Invalid argument in message payload. Check data fields.");
@@ -106,7 +114,7 @@ export const sendPushNotification = async (token, title, body, data = {}) => {
         if (error.code === 'messaging/third-party-auth-error') {
             console.error("FCM auth error. Check your serviceAccountKey.json and Firebase project settings.");
         }
-        return false;
+        return { success: false, code: error.code || 'UNKNOWN_ERROR', error: error.message };
     }
 };
 
@@ -128,6 +136,9 @@ export const sendMulticastNotification = async (tokens, title, body, data = {}) 
     }
 
     const stringifiedData = stringifyData({
+        title: String(title || ''),
+        body: String(body || ''),
+        message: String(body || ''),
         ...data,
         click_action: "FLUTTER_NOTIFICATION_CLICK",
         sound: "default",
@@ -158,6 +169,8 @@ export const sendMulticastNotification = async (tokens, title, body, data = {}) 
                         sound: 'default',
                         channelId: 'high_importance_channel',
                         priority: 'high',
+                        defaultSound: true,
+                        defaultVibrateTimings: true,
                     }
                 },
                 apns: {
@@ -181,7 +194,13 @@ export const sendMulticastNotification = async (tokens, title, body, data = {}) 
             if (response.failureCount > 0) {
                 response.responses.forEach((resp, idx) => {
                     if (!resp.success) {
-                        console.warn(`Failed token: ${batchTokens[idx]?.substring(0, 20)}... | Error: ${resp.error?.code} - ${resp.error?.message}`);
+                        const failedTok = batchTokens[idx];
+                        console.warn(`Failed token: ${failedTok?.substring(0, 20)}... | Error: ${resp.error?.code} - ${resp.error?.message}`);
+                        if (resp.error?.code === 'messaging/registration-token-not-registered') {
+                            import('../model/user.model.js').then(({ default: UserModel }) => {
+                                UserModel.updateMany({ fcmToken: failedTok }, { fcmToken: null }).catch(() => {});
+                            }).catch(() => {});
+                        }
                     }
                 });
             }
