@@ -256,19 +256,9 @@ indexRouter.get("/user/getSettings", UserAuth, getSettings);
 
 indexRouter.delete("/user/deleteAccount", UserAuth, deleteAccount);
 
-indexRouter.get("/list", async (req, res) => {
-  try {
-    const images = await listBucketObjects();
-
-    return sendSuccessResponse(res, "Get all images successfully", {
-      total: images.length,
-      images: images.map((e) => `${e.url}`),
-    });
-  } catch (error) {
-    console.log("ERROR WHILE GET ALL IMAGE FROM S3:", error);
-    return sendErrorResponse(res, 500, "ERROR WHILE GET ALL IMAGE FROM S3", error);
-  }
-});
+indexRouter.get("/list", EmployeeController.getAllUploadedImages);
+indexRouter.get("/employee/allImages", EmployeeController.getAllUploadedImages);
+indexRouter.get("/employee/images", EmployeeController.getAllUploadedImages);
 
 indexRouter.delete("/deleteMany", async (req, res) => {
   try {

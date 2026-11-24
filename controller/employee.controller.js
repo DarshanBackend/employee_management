@@ -6,7 +6,9 @@ import RoleModel from "../model/role.model.js";
 import ShiftModel from "../model/shift.model.js";
 import AttendanceModel from "../model/attendance.model.js";
 import LeaveModel from "../model/leave.model.js";
-import { uploadFile, deleteFileFromS3 } from "../middleware/imageupload.js";
+import DocumentModel from "../model/document.model.js";
+import DocumentTemplateModel from "../model/documentTemplate.model.js";
+import { uploadFile, deleteFileFromS3, listBucketObjects } from "../middleware/imageupload.js";
 import bcrypt from "bcryptjs";
 import transporter from "../utils/Email.config.js";
 import { recordAuditLog } from "../utils/auditLogger.js";
@@ -781,6 +783,367 @@ export class EmployeeController {
       return res.status(500).json({
         success: false,
         message: "Failed to fetch employees",
+        error: error.message,
+      });
+    }
+  }
+
+  static async getAllUploadedImages(req, res) {
+    try {
+      const {
+        section: filterSection,
+        type: filterType,
+        employeeId: filterEmpId,
+        search,
+      } = req.query;
+
+      const s3Objects = await listBucketObjects();
+
+      const [users, documents, leaves, templates] = await Promise.all([
+        UserModel.find({ isUserDeleted: { $ne: true } })
+          .select("name firstName lastName employeeId email avatarUrl documents department designation")
+          .populate("department", "departmentName")
+          .populate("designation", "designationName")
+          .lean(),
+        DocumentModel.find({}).populate("employee", "name employeeId email").lean(),
+        LeaveModel.find({ documentUrl: { $ne: null } }).populate("employee", "name employeeId email").lean(),
+        DocumentTemplateModel.find({ attachmentUrl: { $ne: null } }).lean(),
+      ]);
+
+      const imagesMap = new Map();
+
+      for (const obj of s3Objects) {
+        const rawKey = obj.key;
+        const filename = rawKey.replace(/^uploads\//, "");
+        const url = obj.url;
+
+        imagesMap.set(filename, {
+          url,
+          key: rawKey,
+          filename,
+          size: obj.size,
+          lastModified: obj.lastModified,
+          section: "unassigned",
+          type: "other",
+          label: "Unassigned / General Upload",
+          category: "Unassigned",
+          isLinkedToDatabase: false,
+          employee: null,
+          documentDetails: null,
+        });
+      }
+
+      for (const u of users) {
+        const empInfo = {
+          _id: u._id,
+          name: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Employee",
+          employeeId: u.employeeId || "N/A",
+          email: u.email || "",
+          department: u.department?.departmentName || "",
+          designation: u.designation?.designationName || "",
+        };
+
+        if (u.avatarUrl) {
+          const fn = u.avatarUrl.split("/").pop();
+          if (imagesMap.has(fn)) {
+            const item = imagesMap.get(fn);
+            item.section = "avatarUrl";
+            item.type = "avatarUrl";
+            item.label = "Avatar / Profile Picture";
+            item.category = "Profile Picture";
+            item.isLinkedToDatabase = true;
+            item.employee = empInfo;
+          }
+        }
+
+        if (u.documents) {
+          const docFields = [
+            { field: "panCard", label: "PAN Card" },
+            { field: "aadhaarCard", label: "Aadhaar Card" },
+            { field: "addressProof", label: "Address Proof" },
+            { field: "educationCertificate", label: "Education Certificate" },
+            { field: "experienceLetter", label: "Experience Letter" },
+            { field: "joiningLetter", label: "Joining Letter" },
+          ];
+
+          for (const { field, label } of docFields) {
+            const val = u.documents[field];
+            if (typeof val === "string" && val.trim()) {
+              const fn = val.split("/").pop();
+              if (imagesMap.has(fn)) {
+                const item = imagesMap.get(fn);
+                item.section = "documents";
+                item.type = field;
+                item.label = label;
+                item.category = "User Document";
+                item.isLinkedToDatabase = true;
+                item.employee = empInfo;
+              }
+            }
+          }
+
+          if (Array.isArray(u.documents.otherDocuments)) {
+            for (const od of u.documents.otherDocuments) {
+              if (od?.url) {
+                const fn = od.url.split("/").pop();
+                if (imagesMap.has(fn)) {
+                  const item = imagesMap.get(fn);
+                  item.section = "documents";
+                  item.type = "otherDocuments";
+                  item.label = od.title || "Other Document";
+                  item.category = "User Document";
+                  item.isLinkedToDatabase = true;
+                  item.employee = empInfo;
+                  item.documentDetails = {
+                    title: od.title,
+                    uploadedAt: od.uploadedAt,
+                  };
+                }
+              }
+            }
+          }
+        }
+      }
+
+      for (const d of documents) {
+        if (d.fileUrl) {
+          const fn = d.fileUrl.split("/").pop();
+          if (imagesMap.has(fn)) {
+            const item = imagesMap.get(fn);
+            item.section = "documents";
+            item.type = d.documentCategory || "organizationDocument";
+            item.label = d.documentTitle || d.documentCategory || "Document";
+            item.category = "Organization Document";
+            item.isLinkedToDatabase = true;
+            if (d.employee) {
+              item.employee = {
+                _id: d.employee._id,
+                name: d.employee.name,
+                employeeId: d.employee.employeeId,
+                email: d.employee.email,
+              };
+            }
+            item.documentDetails = {
+              documentId: d._id,
+              documentTitle: d.documentTitle,
+              documentCategory: d.documentCategory,
+              verificationStatus: d.verificationStatus,
+            };
+          }
+        }
+      }
+
+      for (const l of leaves) {
+        if (l.documentUrl) {
+          const fn = l.documentUrl.split("/").pop();
+          if (imagesMap.has(fn)) {
+            const item = imagesMap.get(fn);
+            item.section = "leave";
+            item.type = "leaveAttachment";
+            item.label = `${l.leaveTypeName || "Leave"} Attachment`;
+            item.category = "Leave Attachment";
+            item.isLinkedToDatabase = true;
+            if (l.employee) {
+              item.employee = {
+                _id: l.employee._id,
+                name: l.employee.name,
+                employeeId: l.employee.employeeId,
+                email: l.employee.email,
+              };
+            }
+            item.documentDetails = {
+              leaveId: l._id,
+              leaveType: l.leaveTypeName,
+              status: l.status,
+              fromDate: l.formattedFromDate || l.fromDate,
+              toDate: l.formattedToDate || l.toDate,
+            };
+          }
+        }
+      }
+
+      for (const t of templates) {
+        if (t.attachmentUrl) {
+          const fn = t.attachmentUrl.split("/").pop();
+          if (imagesMap.has(fn)) {
+            const item = imagesMap.get(fn);
+            item.section = "documentTemplate";
+            item.type = "templateAttachment";
+            item.label = t.templateTitle || "Document Template Attachment";
+            item.category = "Template Attachment";
+            item.isLinkedToDatabase = true;
+            item.documentDetails = {
+              templateId: t._id,
+              templateTitle: t.templateTitle,
+              category: t.category,
+            };
+          }
+        }
+      }
+
+      for (const [fn, item] of imagesMap.entries()) {
+        if (!item.isLinkedToDatabase) {
+          const lower = fn.toLowerCase();
+          if (lower.includes("pan-card") || lower.includes("pancard") || lower.includes("pan_card")) {
+            item.section = "documents";
+            item.type = "panCard";
+            item.label = "PAN Card";
+            item.category = "User Document";
+          } else if (lower.includes("aadhaar") || lower.includes("aadhar")) {
+            item.section = "documents";
+            item.type = "aadhaarCard";
+            item.label = "Aadhaar Card";
+            item.category = "User Document";
+          } else if (lower.includes("experience") || lower.includes("exp-letter")) {
+            item.section = "documents";
+            item.type = "experienceLetter";
+            item.label = "Experience Letter";
+            item.category = "User Document";
+          } else if (lower.includes("graduation") || lower.includes("certificate") || lower.includes("degree")) {
+            item.section = "documents";
+            item.type = "educationCertificate";
+            item.label = "Education Certificate";
+            item.category = "User Document";
+          } else if (lower.includes("bill") || lower.includes("address") || lower.includes("electricity")) {
+            item.section = "documents";
+            item.type = "addressProof";
+            item.label = "Address Proof";
+            item.category = "User Document";
+          } else if (lower.includes("joining") || lower.includes("offer")) {
+            item.section = "documents";
+            item.type = "joiningLetter";
+            item.label = "Joining Letter";
+            item.category = "User Document";
+          } else if (lower.includes("avatar") || lower.includes("profile")) {
+            item.section = "avatarUrl";
+            item.type = "avatarUrl";
+            item.label = "Avatar / Profile Picture";
+            item.category = "Profile Picture";
+          } else if (lower.includes("leave") || lower.includes("exit")) {
+            item.section = "leave";
+            item.type = "leaveAttachment";
+            item.label = "Leave / Exit Attachment";
+            item.category = "Leave Attachment";
+          } else if (lower.includes("healthcheck")) {
+            item.section = "system";
+            item.type = "healthcheck";
+            item.label = "System Healthcheck";
+            item.category = "System";
+          }
+        }
+      }
+
+      let allImages = Array.from(imagesMap.values());
+
+      if (filterSection) {
+        const s = String(filterSection).trim().toLowerCase();
+        allImages = allImages.filter((img) => img.section.toLowerCase() === s);
+      }
+
+      if (filterType) {
+        const t = String(filterType).trim().toLowerCase();
+        allImages = allImages.filter((img) => img.type.toLowerCase() === t);
+      }
+
+      if (filterEmpId) {
+        const eid = String(filterEmpId).trim();
+        allImages = allImages.filter(
+          (img) =>
+            img.employee?._id?.toString() === eid ||
+            img.employee?.employeeId?.toLowerCase() === eid.toLowerCase()
+        );
+      }
+
+      if (search) {
+        const q = String(search).trim().toLowerCase();
+        allImages = allImages.filter(
+          (img) =>
+            img.filename.toLowerCase().includes(q) ||
+            img.label.toLowerCase().includes(q) ||
+            img.type.toLowerCase().includes(q) ||
+            img.employee?.name?.toLowerCase().includes(q) ||
+            img.employee?.employeeId?.toLowerCase().includes(q)
+        );
+      }
+
+      const sections = {
+        avatarUrl: [],
+        documents: {
+          panCard: [],
+          aadhaarCard: [],
+          addressProof: [],
+          educationCertificate: [],
+          experienceLetter: [],
+          joiningLetter: [],
+          otherDocuments: [],
+          organizationDocuments: [],
+          all: [],
+        },
+        leave: [],
+        documentTemplate: [],
+        system: [],
+        unassigned: [],
+      };
+
+      for (const img of allImages) {
+        switch (img.section) {
+          case "avatarUrl":
+            sections.avatarUrl.push(img);
+            break;
+          case "documents":
+            sections.documents.all.push(img);
+            if (sections.documents[img.type]) {
+              sections.documents[img.type].push(img);
+            } else if (img.category === "Organization Document") {
+              sections.documents.organizationDocuments.push(img);
+            } else {
+              sections.documents.otherDocuments.push(img);
+            }
+            break;
+          case "leave":
+            sections.leave.push(img);
+            break;
+          case "documentTemplate":
+            sections.documentTemplate.push(img);
+            break;
+          case "system":
+            sections.system.push(img);
+            break;
+          default:
+            sections.unassigned.push(img);
+            break;
+        }
+      }
+
+      const summary = {
+        total: allImages.length,
+        avatarCount: sections.avatarUrl.length,
+        documentsCount: sections.documents.all.length,
+        panCardCount: sections.documents.panCard.length,
+        aadhaarCardCount: sections.documents.aadhaarCard.length,
+        addressProofCount: sections.documents.addressProof.length,
+        educationCertificateCount: sections.documents.educationCertificate.length,
+        experienceLetterCount: sections.documents.experienceLetter.length,
+        joiningLetterCount: sections.documents.joiningLetter.length,
+        leaveCount: sections.leave.length,
+        templateCount: sections.documentTemplate.length,
+        unassignedCount: sections.unassigned.length,
+      };
+
+      return res.status(200).json({
+        success: true,
+        message: "Get all images section-wise successfully",
+        result: {
+          summary,
+          sections,
+          images: allImages,
+        },
+      });
+    } catch (error) {
+      console.error("Get All Uploaded Images Error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to retrieve section-wise images",
         error: error.message,
       });
     }
