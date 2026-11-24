@@ -10,6 +10,7 @@ import { HolidayController } from "../controller/holiday.controller.js";
 import { AttendanceRuleController } from "../controller/attendanceRule.controller.js";
 import { PayrollController } from "../controller/payroll.controller.js";
 import { ExportReportController } from "../controller/exportReport.controller.js";
+import { ReportsAnalyticsController } from "../controller/reportsAnalytics.controller.js";
 import { RoleController } from "../controller/role.controller.js";
 import { AuditLogController } from "../controller/auditLog.controller.js";
 import { DocumentController } from "../controller/document.controller.js";
@@ -177,6 +178,10 @@ indexRouter.get("/getRecentExports", UserAuth, ExportReportController.getRecentE
 indexRouter.post("/generateExport", UserAuth, ExportReportController.generateExport);
 indexRouter.get("/downloadRecentExport/:id", UserAuth, ExportReportController.downloadRecentExport);
 indexRouter.delete("/deleteExport/:id", UserAuth, adminAuth, ExportReportController.deleteExport);
+
+indexRouter.get("/getReportsAnalytics", UserAuth, ReportsAnalyticsController.getReportsAnalytics);
+indexRouter.post("/exportAnalyticsPdf", UserAuth, ReportsAnalyticsController.exportAnalyticsPdf);
+indexRouter.get("/exportAnalyticsPdf", UserAuth, ReportsAnalyticsController.exportAnalyticsPdf);
 
 indexRouter.get("/getAllRoles", UserAuth, RoleController.getAllRoles);
 indexRouter.get("/getRoleById/:id", UserAuth, RoleController.getRoleById);
