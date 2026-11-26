@@ -407,42 +407,45 @@ export const syncAttendanceBreakStatus = (attendance, shift = null, now = new Da
   }
 
   const checkInDt = new Date(attendance.checkInTime);
-  const totalElapsed = Math.max(0, Math.floor((now.getTime() - checkInDt.getTime()) / 60000));
+  const totalElapsedMs = Math.max(0, now.getTime() - checkInDt.getTime());
 
-  let totalDeductedBreakTime = 0;
+  let totalDeductedBreakMs = 0;
   for (const brk of attendance.breaks) {
     const sDt = combineDateAndTimeWithShift(attendanceDateStr, brk.scheduledStartTime, shiftStartTime);
     const eDt = combineDateAndTimeWithShift(attendanceDateStr, brk.scheduledEndTime, shiftStartTime);
 
     if (brk.status === "Completed") {
       if (brk.stoppedAt && brk.resumedAt) {
-        const actualBreakMins = Math.max(
+        const actualBreakMs = Math.max(
           0,
-          Math.floor((new Date(brk.resumedAt).getTime() - new Date(brk.stoppedAt).getTime()) / 60000)
+          new Date(brk.resumedAt).getTime() - new Date(brk.stoppedAt).getTime()
         );
-        totalDeductedBreakTime += actualBreakMins;
+        totalDeductedBreakMs += actualBreakMs;
       } else {
-        totalDeductedBreakTime += (brk.scheduledDurationMinutes || 15) + (brk.lateResumeMinutes || 0);
+        totalDeductedBreakMs += ((brk.scheduledDurationMinutes || 15) + (brk.lateResumeMinutes || 0)) * 60000;
       }
     } else if (brk.status === "Active" && now >= sDt) {
-      const elapsedOnBreak = Math.max(0, Math.floor((now.getTime() - sDt.getTime()) / 60000));
-      totalDeductedBreakTime += elapsedOnBreak;
+      const brkStart = brk.stoppedAt ? new Date(brk.stoppedAt) : sDt;
+      const elapsedOnBreakMs = Math.max(0, now.getTime() - brkStart.getTime());
+      totalDeductedBreakMs += elapsedOnBreakMs;
     } else if (brk.status === "Pending Resume" && now >= eDt) {
-      const overdueDelay = Math.max(0, Math.floor((now.getTime() - eDt.getTime()) / 60000));
-      totalDeductedBreakTime += (brk.scheduledDurationMinutes || 15) + overdueDelay;
+      const brkStart = brk.stoppedAt ? new Date(brk.stoppedAt) : sDt;
+      const elapsedOnBreakMs = Math.max(0, now.getTime() - brkStart.getTime());
+      totalDeductedBreakMs += elapsedOnBreakMs;
     }
   }
 
-  let totalManualPauseTime = attendance.totalManualPauseMinutes || 0;
+  let totalManualPauseMs = (attendance.totalManualPauseMinutes || 0) * 60000;
   if (attendance.trackerStatus === "PAUSED" && attendance.activePause?.pausedAt) {
-    const activePauseElapsed = Math.max(
+    const activePauseElapsedMs = Math.max(
       0,
-      Math.floor((now.getTime() - new Date(attendance.activePause.pausedAt).getTime()) / 60000)
+      now.getTime() - new Date(attendance.activePause.pausedAt).getTime()
     );
-    totalManualPauseTime += activePauseElapsed;
+    totalManualPauseMs += activePauseElapsedMs;
   }
 
-  const activeWorkMinutes = Math.max(0, totalElapsed - totalDeductedBreakTime - totalManualPauseTime);
+  const activeWorkMs = Math.max(0, totalElapsedMs - totalDeductedBreakMs - totalManualPauseMs);
+  const activeWorkMinutes = Math.floor(activeWorkMs / 60000);
   if (attendance.totalWorkMinutes !== activeWorkMinutes) {
     attendance.totalWorkMinutes = activeWorkMinutes;
     const h = Math.floor(activeWorkMinutes / 60);
