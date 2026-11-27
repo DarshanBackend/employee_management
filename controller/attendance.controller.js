@@ -563,32 +563,30 @@ export class AttendanceController {
       }
       const checkOutDisplay = formatTimeDisplay(now);
 
-      let attendance = await AttendanceModel.findOne({
-        employee: employeeId,
-        date: todayDate,
-      });
-
-      if (!attendance || !attendance.checkInTime) {
-        const yesterday = new Date(now);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayDate = getNormalizedDateString(yesterday);
-
-        const openOvernight = await AttendanceModel.findOne({
-          employee: employeeId,
-          date: yesterdayDate,
-          checkInTime: { $ne: null },
-          checkOutTime: null,
-        });
-
-        if (openOvernight) {
-          attendance = openOvernight;
+      let activeShift = null;
+      if (!isAdmin) {
+        const user = await UserModel.findById(employeeId).populate("shift").populate("shiftAndSchedule.shift");
+        activeShift = user?.shift || user?.shiftAndSchedule?.shift || null;
+        if (!activeShift) {
+          activeShift =
+            (await ShiftModel.findOne({ isDefault: true, status: "Active" })) ||
+            (await ShiftModel.findOne({ status: "Active" }));
         }
       }
+
+      const shiftStartTime = activeShift?.startTime || "09:00 AM";
+      const shiftEndTime = activeShift?.endTime || "06:00 PM";
+      const targetDate = isAdmin ? todayDate : getLogicalShiftDate(shiftStartTime, shiftEndTime, now);
+
+      let attendance = await AttendanceModel.findOne({
+        employee: employeeId,
+        date: targetDate,
+      });
 
       if (!attendance || !attendance.checkInTime) {
         const pendingRegularization = await AttendanceRegularizationModel.findOne({
           employee: employeeId,
-          date: attendance?.date || todayDate,
+          date: targetDate,
           correctionType: "Missed Check-In",
           status: "Pending",
         });
@@ -623,20 +621,10 @@ export class AttendanceController {
         });
       }
 
-      let activeShift = null;
-      if (!isAdmin) {
-        const user = await UserModel.findById(employeeId).populate("shift").populate("shiftAndSchedule.shift");
-        activeShift = user?.shift || user?.shiftAndSchedule?.shift || null;
-        if (!activeShift) {
-          activeShift =
-            (await ShiftModel.findOne({ isDefault: true, status: "Active" })) ||
-            (await ShiftModel.findOne({ status: "Active" }));
-        }
-
+      if (!isAdmin && activeShift) {
         syncAttendanceBreakStatus(attendance, activeShift, now);
       }
 
-      const targetDate = attendance.date || todayDate;
       const checkInDate = new Date(attendance.checkInTime);
       const diffMs = now.getTime() - checkInDate.getTime();
       const elapsedMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
@@ -896,76 +884,15 @@ export class AttendanceController {
         });
       }
 
-      let attendance = await AttendanceModel.findOne({ employee: employeeId, date: todayDate });
-
-      if (!attendance || !attendance.checkInTime) {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayDate = getNormalizedDateString(yesterday);
-
-        const openOvernight = await AttendanceModel.findOne({
-          employee: employeeId,
-          date: yesterdayDate,
-          checkInTime: { $ne: null },
-          checkOutTime: null,
-        });
-
-        if (openOvernight) {
-          attendance = openOvernight;
-        }
-      }
-
-      const [
-        pendingRegularization,
-        pendingEarlyOut,
-        approvedEarlyOut,
-        approvedLeave,
-        pendingLeave,
-        user,
-      ] = await Promise.all([
-        AttendanceRegularizationModel.findOne({
-          employee: employeeId,
-          date: attendance?.date || todayDate,
-          correctionType: "Missed Check-In",
-          status: "Pending",
-        }),
-        AttendanceRegularizationModel.findOne({
-          employee: employeeId,
-          date: attendance?.date || todayDate,
-          correctionType: {
-            $in: ["Early Out Regularization", "Leave", "Half Day Leave", "Early Departure"],
-          },
-          status: "Pending",
-        }),
-        AttendanceRegularizationModel.findOne({
-          employee: employeeId,
-          date: attendance?.date || todayDate,
-          correctionType: {
-            $in: ["Early Out Regularization", "Leave", "Half Day Leave", "Early Departure"],
-          },
-          status: "Approved",
-        }),
-        LeaveModel.findOne({
-          employee: employeeId,
-          fromDate: { $lte: attendance?.date || todayDate },
-          toDate: { $gte: attendance?.date || todayDate },
-          status: "Approved",
-        }),
-        LeaveModel.findOne({
-          employee: employeeId,
-          fromDate: { $lte: attendance?.date || todayDate },
-          toDate: { $gte: attendance?.date || todayDate },
-          status: "Pending",
-        }),
-        UserModel.findById(employeeId)
-          .populate("shift")
-          .populate("shiftAndSchedule.shift"),
-      ]);
-
       let targetShift = null;
       if (req.query?.shiftId && mongoose.Types.ObjectId.isValid(req.query.shiftId)) {
         targetShift = await ShiftModel.findById(req.query.shiftId);
       }
+
+      const user = await UserModel.findById(employeeId)
+        .populate("shift")
+        .populate("shiftAndSchedule.shift");
+
       if (!targetShift) {
         targetShift = user?.shift || user?.shiftAndSchedule?.shift || null;
       }
@@ -974,6 +901,56 @@ export class AttendanceController {
           (await ShiftModel.findOne({ isDefault: true, status: "Active" })) ||
           (await ShiftModel.findOne({ status: "Active" }));
       }
+
+      const shiftStartTime = targetShift?.startTime || "09:00 AM";
+      const shiftEndTime = targetShift?.endTime || "06:00 PM";
+      const now = new Date();
+      const targetDate = getLogicalShiftDate(shiftStartTime, shiftEndTime, now);
+
+      let attendance = await AttendanceModel.findOne({ employee: employeeId, date: targetDate });
+
+      const [
+        pendingRegularization,
+        pendingEarlyOut,
+        approvedEarlyOut,
+        approvedLeave,
+        pendingLeave,
+      ] = await Promise.all([
+        AttendanceRegularizationModel.findOne({
+          employee: employeeId,
+          date: targetDate,
+          correctionType: "Missed Check-In",
+          status: "Pending",
+        }),
+        AttendanceRegularizationModel.findOne({
+          employee: employeeId,
+          date: targetDate,
+          correctionType: {
+            $in: ["Early Out Regularization", "Leave", "Half Day Leave", "Early Departure"],
+          },
+          status: "Pending",
+        }),
+        AttendanceRegularizationModel.findOne({
+          employee: employeeId,
+          date: targetDate,
+          correctionType: {
+            $in: ["Early Out Regularization", "Leave", "Half Day Leave", "Early Departure"],
+          },
+          status: "Approved",
+        }),
+        LeaveModel.findOne({
+          employee: employeeId,
+          fromDate: { $lte: targetDate },
+          toDate: { $gte: targetDate },
+          status: "Approved",
+        }),
+        LeaveModel.findOne({
+          employee: employeeId,
+          fromDate: { $lte: targetDate },
+          toDate: { $gte: targetDate },
+          status: "Pending",
+        }),
+      ]);
 
       const hasCheckedIn = Boolean(attendance && attendance.checkInTime);
       const hasCheckedOut = Boolean(attendance && attendance.checkOutTime);
@@ -985,7 +962,9 @@ export class AttendanceController {
         }
       }
 
-      const requiredWorkMinutes = attendance?.requiredWorkMinutes || 540;
+      const requiredWorkMinutes =
+        attendance?.requiredWorkMinutes ||
+        (targetShift?.durationHours ? targetShift.durationHours * 60 : 540);
       let earliestCheckoutDisplay = attendance?.earliestAllowedCheckOutDisplay || null;
       let elapsedMinutes = 0;
       let remainingMinutes = 0;
@@ -1009,6 +988,11 @@ export class AttendanceController {
         const remH = Math.floor(remainingMinutes / 60);
         const remM = remainingMinutes % 60;
         remainingTimeDisplay = isHoursCompleted ? "Completed" : `${remH}h ${String(remM).padStart(2, "0")}m remaining`;
+      } else {
+        remainingMinutes = requiredWorkMinutes;
+        const remH = Math.floor(remainingMinutes / 60);
+        const remM = remainingMinutes % 60;
+        remainingTimeDisplay = `${remH}h ${String(remM).padStart(2, "0")}m remaining`;
       }
 
       const isEarlyOutApproved = Boolean(
@@ -1026,8 +1010,6 @@ export class AttendanceController {
         }
       }
 
-      const shiftStartTime = targetShift?.startTime || "09:00 AM";
-      const shiftEndTime = targetShift?.endTime || "06:00 PM";
       const shiftTimingStatus = evaluateShiftTiming(shiftStartTime, shiftEndTime, new Date());
       const isShiftEnded = !hasCheckedIn && shiftTimingStatus.isShiftEnded;
       const isShiftNotStarted = !hasCheckedIn && shiftTimingStatus.isShiftNotStarted;
@@ -1054,8 +1036,8 @@ export class AttendanceController {
       const timeline = buildActivityTimeline(attendance);
 
       return sendSuccessResponse(res, "Today's attendance status retrieved", {
-        date: todayDate,
-        formattedDate: formattedToday,
+        date: targetDate,
+        formattedDate: targetDate === todayDate ? formattedToday : formatDisplayDate(new Date(targetDate)),
         hasCheckedIn,
         canCheckIn,
         isShiftEnded,
@@ -1563,27 +1545,27 @@ export class AttendanceController {
       const todayDate = getNormalizedDateString();
       const now = new Date();
 
-      let attendance = await AttendanceModel.findOne({
-        employee: employeeId,
-        date: todayDate,
-      });
-
-      if (!attendance || !attendance.checkInTime) {
-        const yesterday = new Date(now);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayDate = getNormalizedDateString(yesterday);
-
-        const openOvernight = await AttendanceModel.findOne({
-          employee: employeeId,
-          date: yesterdayDate,
-          checkInTime: { $ne: null },
-          checkOutTime: null,
-        });
-
-        if (openOvernight) {
-          attendance = openOvernight;
+      let activeShift = null;
+      if (!isAdmin) {
+        const user = await UserModel.findById(employeeId)
+          .populate("shift")
+          .populate("shiftAndSchedule.shift");
+        activeShift = user?.shift || user?.shiftAndSchedule?.shift || null;
+        if (!activeShift) {
+          activeShift =
+            (await ShiftModel.findOne({ isDefault: true, status: "Active" })) ||
+            (await ShiftModel.findOne({ status: "Active" }));
         }
       }
+
+      const shiftStartTime = activeShift?.startTime || "09:00 AM";
+      const shiftEndTime = activeShift?.endTime || "06:00 PM";
+      const targetDate = isAdmin ? todayDate : getLogicalShiftDate(shiftStartTime, shiftEndTime, now);
+
+      let attendance = await AttendanceModel.findOne({
+        employee: employeeId,
+        date: targetDate,
+      });
 
       if (!attendance || !attendance.checkInTime) {
         return sendBadRequestResponse(
@@ -1597,19 +1579,6 @@ export class AttendanceController {
           res,
           `You have already checked out for today at ${attendance.checkOutDisplay}.`
         );
-      }
-
-      let activeShift = null;
-      if (!isAdmin) {
-        const user = await UserModel.findById(employeeId)
-          .populate("shift")
-          .populate("shiftAndSchedule.shift");
-        activeShift = user?.shift || user?.shiftAndSchedule?.shift || null;
-        if (!activeShift) {
-          activeShift =
-            (await ShiftModel.findOne({ isDefault: true, status: "Active" })) ||
-            (await ShiftModel.findOne({ status: "Active" }));
-        }
       }
 
       const { modified } = syncAttendanceBreakStatus(attendance, activeShift, now);
@@ -1687,27 +1656,27 @@ export class AttendanceController {
       const todayDate = getNormalizedDateString();
       const now = new Date();
 
-      let attendance = await AttendanceModel.findOne({
-        employee: employeeId,
-        date: todayDate,
-      });
-
-      if (!attendance || !attendance.checkInTime) {
-        const yesterday = new Date(now);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayDate = getNormalizedDateString(yesterday);
-
-        const openOvernight = await AttendanceModel.findOne({
-          employee: employeeId,
-          date: yesterdayDate,
-          checkInTime: { $ne: null },
-          checkOutTime: null,
-        });
-
-        if (openOvernight) {
-          attendance = openOvernight;
+      let activeShift = null;
+      if (!isAdmin) {
+        const user = await UserModel.findById(employeeId)
+          .populate("shift")
+          .populate("shiftAndSchedule.shift");
+        activeShift = user?.shift || user?.shiftAndSchedule?.shift || null;
+        if (!activeShift) {
+          activeShift =
+            (await ShiftModel.findOne({ isDefault: true, status: "Active" })) ||
+            (await ShiftModel.findOne({ status: "Active" }));
         }
       }
+
+      const shiftStartTime = activeShift?.startTime || "09:00 AM";
+      const shiftEndTime = activeShift?.endTime || "06:00 PM";
+      const targetDate = isAdmin ? todayDate : getLogicalShiftDate(shiftStartTime, shiftEndTime, now);
+
+      let attendance = await AttendanceModel.findOne({
+        employee: employeeId,
+        date: targetDate,
+      });
 
       if (!attendance || !attendance.checkInTime) {
         return sendBadRequestResponse(res, "You have not checked in today.");
